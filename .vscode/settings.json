@@ -1,0 +1,12 @@
+{
+  "idf.portWin": "COM13",
+  "files.associations": {
+    "*.dbclient-js": "javascript",
+    "new": "cpp",
+    "algorithm": "cpp",
+    "functional": "cpp",
+    "random": "cpp",
+    "cmath": "cpp",
+    "unordered_map": "cpp"
+  }
+}

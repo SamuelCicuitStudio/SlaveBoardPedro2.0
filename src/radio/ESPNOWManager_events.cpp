@@ -1,0 +1,295 @@
+#include <ESPNOWManager.hpp>
+#include <CommandAPI.hpp>
+#include <Transport.hpp>
+#include <Utils.hpp>
+
+// =============================================================
+//  Transport -> CommandAPI bridge (Responses/Events to ACK_*)
+// =============================================================
+namespace {
+bool isStatusOk_(const transport::TransportMessage& msg, size_t minPayload = 1) {
+  if (msg.payload.size() < minPayload) return false;
+  return msg.payload[0] == static_cast<uint8_t>(transport::StatusCode::OK);
+}
+} // namespace
+
+bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
+  // Only translate messages destined to master (destId=1).
+  if (msg.header.destId != 1) return false;
+
+  auto sendAckStr = [this](const String& s, bool ok = true) {
+    SendAck(s, ok);
+  };
+
+  const uint8_t mod = msg.header.module;
+  const uint8_t op  = msg.header.opCode;
+  const auto& pl    = msg.payload;
+  const auto statusOk = isStatusOk_(msg);
+
+  // ---------- Device module ----------
+  if (mod == static_cast<uint8_t>(transport::Module::Device)) {
+    switch (op) {
+      case 0x02: // StateQuery Response
+      case 0x09: // StateReport Event
+        sendState("TRSPRT");
+        return true;
+      case 0x01: // ConfigMode Response
+        sendAckStr(ACK_TEST_MODE, statusOk);
+        return true;
+      case 0x03: { // ConfigStatus Response
+        if (pl.size() >= 2) {
+          const bool configured = pl[1] != 0;
+          sendAckStr(configured ? ACK_CONFIGURED : ACK_NOT_CONFIGURED, configured);
+          return true;
+        }
+        break;
+      }
+      case 0x04: // Arm Response
+        sendAckStr(ACK_ARMED, statusOk);
+        return true;
+      case 0x05: // Disarm Response
+        sendAckStr(ACK_DISARMED, statusOk);
+        return true;
+      case 0x07: // CapsSet Response
+        sendAckStr(ACK_CAP_SET, statusOk);
+        return true;
+      case 0x08: { // CapsQuery Response
+        if (pl.size() >= 2) {
+          uint8_t bits = pl[1];
+          setCapBitsShadow_(bits);
+          String caps = String(ACK_CAPS) + ":O" + String((bits & 0x01) ? 1 : 0) +
+                        "S" + String((bits & 0x02) ? 1 : 0) +
+                        "R" + String((bits & 0x04) ? 1 : 0) +
+                        "F" + String((bits & 0x08) ? 1 : 0);
+          sendAckStr(caps, statusOk);
+          return true;
+        }
+        break;
+      }
+      case 0x0C: // NvsWrite Response
+        if (pendingLockEmag_ >= 0) {
+          sendAckStr(pendingLockEmag_ ? ACK_LOCK_EMAG_ON : ACK_LOCK_EMAG_OFF, statusOk);
+          pendingLockEmag_ = -1;
+          return true;
+        }
+        sendAckStr(ACK_CAP_SET, statusOk);
+        return true;
+      case 0x0B: { // PairingStatus Response
+        if (pl.size() >= 2) {
+          const bool configured = pl[1] != 0;
+          sendAckStr(configured ? ACK_CONFIGURED : ACK_NOT_CONFIGURED, configured);
+          return true;
+        }
+        break;
+      }
+      case 0x0D: // Heartbeat Response
+      case 0x17: { // Ping Response
+        if (pl.size() >= 7) {
+          uint32_t up = (uint32_t)pl[1] | ((uint32_t)pl[2] << 8) |
+                        ((uint32_t)pl[3] << 16) | ((uint32_t)pl[4] << 24);
+          uint16_t seq = (uint16_t)pl[5] | ((uint16_t)pl[6] << 8);
+          String hb = String(ACK_HEARTBEAT) + " seq=" + String(seq) + " up=" + String(up);
+          sendAckStr(hb, statusOk);
+          return true;
+        }
+        break;
+      }
+      case 0x0E: // UnlockRequest Event
+        sendAckStr(EVT_GENERIC, false);
+        return true;
+      case 0x0F: { // AlarmRequest Event
+        uint8_t reason = (pl.size() >= 1) ? pl[0] : 0;
+        if (reason == 0) sendAckStr(EVT_BREACH, true);
+        else             sendAckStr(EVT_MTRTTRG, false);
+        return true;
+      }
+      case 0x10: // DriverFar
+        sendAckStr(ACK_DRIVER_FAR, true);
+        return true;
+      case 0x15: // CancelTimers Response
+        sendAckStr(ACK_TMR_CANCELLED, statusOk);
+        return true;
+      case 0x16: // SetRole Response
+        sendAckStr(ACK_ROLE, statusOk);
+        return true;
+      case 0x11: // LockCanceled
+        sendAckStr(ACK_LOCK_CANCELED, pl.size() ? (pl[0] == 0) : true);
+        return true;
+      case 0x12: // AlarmOnlyMode
+        sendAckStr(ACK_ALARM_ONLY_MODE, pl.size() ? (pl[0] == 0) : true);
+        return true;
+      case 0x14: // CriticalPower
+        sendAckStr(EVT_CRITICAL, false);
+        return true;
+      default:
+        break;
+    }
+  }
+
+  // ---------- Motor module ----------
+  if (mod == static_cast<uint8_t>(transport::Module::Motor)) {
+    if (op == 0x01 || op == 0x02) { // Lock/Unlock response
+      if (!statusOk) {
+        pendingForceAck_ = 0;
+        sendAckStr(ACK_LOCK_CANCELED, false);
+        return true;
+      }
+      return true; // success: wait for MotorDone event
+    }
+    if (op == 0x05) { // MotorDone event
+      if (pl.size() >= 2) {
+        bool locked = pl[1] != 0;
+        if (pendingForceAck_ == 1) {
+          sendAckStr(ACK_FORCE_LOCKED, statusOk);
+          pendingForceAck_ = 0;
+          return true;
+        }
+        if (pendingForceAck_ == 2) {
+          sendAckStr(ACK_FORCE_UNLOCKED, statusOk);
+          pendingForceAck_ = 0;
+          return true;
+        }
+        sendAckStr(locked ? ACK_LOCKED : ACK_UNLOCKED, statusOk);
+        return true;
+      }
+    }
+  }
+
+  // ---------- Shock module ----------
+  if (mod == static_cast<uint8_t>(transport::Module::Shock) && op == 0x03) {
+    sendAckStr(EVT_MTRTTRG, false);
+    return true;
+  }
+
+  // ---------- Switch/Reed module ----------
+  if (mod == static_cast<uint8_t>(transport::Module::SwitchReed)) {
+    if (op == 0x01 && pl.size() >= 1) { // DoorEdge
+      String evt = String(EVT_REED) + ":" + String(pl[0] ? 1 : 0);
+      sendAckStr(evt, false);
+      return true;
+    }
+    if (op == 0x02) { // OpenRequest
+      sendAckStr(EVT_GENERIC, false);
+      return true;
+    }
+  }
+
+  // ---------- Power module ----------
+  if (mod == static_cast<uint8_t>(transport::Module::Power)) {
+    if (op == 0x02) { // LowBatt
+      String evt = String(EVT_LWBT);
+      if (!pl.empty()) {
+        evt += ":" + String(pl[0]);
+      }
+      sendAckStr(evt, false);
+      return true;
+    }
+    if (op == 0x03) { // CriticalBatt
+      String evt = String(EVT_CRITICAL);
+      if (!pl.empty()) {
+        evt += ":" + String(pl[0]);
+      }
+      sendAckStr(evt, false);
+      return true;
+    }
+  }
+
+  // ---------- Fingerprint module ----------
+  if (mod == static_cast<uint8_t>(transport::Module::Fingerprint)) {
+    switch (op) {
+      case 0x01: // VerifyOn response
+        sendAckStr(ACK_FP_VERIFY_ON, statusOk);
+        return true;
+      case 0x02: // VerifyOff response
+        sendAckStr(ACK_FP_VERIFY_OFF, statusOk);
+        return true;
+      case 0x0A: { // MatchEvent
+        if (pl.size() >= 3) {
+          uint16_t id = (uint16_t)pl[0] | ((uint16_t)pl[1] << 8);
+          uint8_t conf = pl[2];
+          String line = String(EVT_FP_MATCH) + ":" + String(id) + "," + String(conf);
+          sendAckStr(line, false);
+          return true;
+        }
+        break;
+      }
+      case 0x0B: { // Fail/busy/no-sensor/tamper
+        if (pl.empty()) break;
+        switch (pl[0]) {
+          case 0: sendAckStr(EVT_FP_FAIL, false);          return true;
+          case 1: sendAckStr(ACK_FP_NO_SENSOR,     false); return true;
+          case 2: sendAckStr(ACK_FP_BUSY,          false); return true;
+          case 3: sendAckStr(ACK_ERR_TOKEN,        false); return true;
+          default: break;
+        }
+        break;
+      }
+      case 0x0C: { // EnrollProgress
+        if (pl.size() < 4) break;
+        uint8_t stage = pl[0];
+        uint8_t status = pl[3];
+        String ack;
+        switch (stage) {
+          case 1: ack = ACK_FP_ENROLL_START;   break;
+          case 2: ack = ACK_FP_ENROLL_CAP1;    break;
+          case 3: ack = ACK_FP_ENROLL_LIFT;    break;
+          case 4: ack = ACK_FP_ENROLL_CAP2;    break;
+          case 5: ack = ACK_FP_ENROLL_STORING; break;
+          case 6: ack = ACK_FP_ENROLL_OK;      break;
+          case 7: ack = ACK_FP_ENROLL_FAIL;    break;
+          case 8: ack = ACK_FP_ENROLL_TIMEOUT; break;
+          default: break;
+        }
+        if (ack.length()) {
+          sendAckStr(ack, status == 0);
+          return true;
+        }
+        break;
+      }
+      case 0x06: { // QueryDb response
+        if (pl.size() >= 5) {
+          uint16_t count = (uint16_t)pl[1] | ((uint16_t)pl[2] << 8);
+          uint16_t cap   = (uint16_t)pl[3] | ((uint16_t)pl[4] << 8);
+          String line = String(ACK_FP_DB_INFO) + ":" + String(count) + "/" + String(cap);
+          sendAckStr(line, statusOk);
+          return true;
+        }
+        break;
+      }
+      case 0x07: { // NextId response
+        if (pl.size() >= 3) {
+          uint16_t slot = (uint16_t)pl[1] | ((uint16_t)pl[2] << 8);
+          String line = String(ACK_FP_NEXT_ID) + ":" + String(slot);
+          sendAckStr(line, statusOk);
+          return true;
+        }
+        break;
+      }
+      case 0x04: { // DeleteId response
+        if (pl.size() >= 3) {
+          uint16_t slot = (uint16_t)pl[1] | ((uint16_t)pl[2] << 8);
+          String line = String(ACK_FP_ID_DELETED) + ":" + String(slot);
+          sendAckStr(line, statusOk);
+          return true;
+        }
+        break;
+      }
+      case 0x05: // ClearDb response
+        sendAckStr(ACK_FP_DB_CLEARED, statusOk);
+        return true;
+      case 0x08: // AdoptSensor response
+        sendAckStr(statusOk ? ACK_FP_ADOPT_OK : ACK_FP_ADOPT_FAIL, statusOk);
+        return true;
+      case 0x09: // ReleaseSensor response
+        sendAckStr(statusOk ? ACK_FP_RELEASE_OK : ACK_FP_RELEASE_FAIL, statusOk);
+        return true;
+      default:
+        break;
+    }
+  }
+
+  // Not handled: swallow to prevent raw transport frames reaching master.
+  DBG_PRINTF("[ESPNOW][TRSPRT] Unhandled response mod=0x%02X op=0x%02X len=%u\n",
+               (unsigned)mod, (unsigned)op, (unsigned)pl.size());
+  return true;
+}

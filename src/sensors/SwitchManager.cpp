@@ -1,0 +1,183 @@
+#include <SwitchManager.hpp>
+#include <ResetManager.hpp>
+#include <RGBLed.hpp>
+#include <Utils.hpp>
+
+// Small helper
+static inline uint32_t nowMs() { return millis(); }
+
+// Static instance pointer for ISR thunks
+SwitchManager* SwitchManager::s_instance_ = nullptr;
+
+SwitchManager::SwitchManager() {
+    s_instance_ = this;
+    // Your original behavior: set BOOT input; leave other pins as-is.
+    pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+
+    DBGSTR();
+    DBG_PRINTLN("###########################################################");
+    DBG_PRINTLN("#           Starting Switch Manager (RTOS-free)           #");
+    DBG_PRINTLN("###########################################################");
+    DBG_PRINT  ("BOOT_BUTTON_PIN: "); DBG_PRINTLN((int)BOOT_BUTTON_PIN);
+    DBG_PRINT  ("TAP_WINDOW_MS  : "); DBG_PRINTLN((int)TAP_WINDOW_MS);
+    DBG_PRINT  ("HOLD_THRESHOLD : "); DBG_PRINTLN((int)HOLD_THRESHOLD_MS);
+    DBGSTP();
+}
+
+void SwitchManager::begin() {
+    // Keep minimal (same as your original ctor setup); safe to re-call.
+    pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+    pinMode(REED_SWITCH_PIN, INPUT_PULLUP);
+    pinMode(OPEN_SWITCH_PIN, INPUT_PULLUP);
+
+#ifdef ARDUINO_ARCH_ESP32
+    // Fast edge detection on door reed and open button.
+    // ISR only sets flags; actual logic stays in isDoorOpen()/isOpenButtonPressed().
+    attachInterrupt(digitalPinToInterrupt(REED_SWITCH_PIN),  SwitchManager::doorIsrThunk_, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(OPEN_SWITCH_PIN),  SwitchManager::openIsrThunk_, CHANGE);
+#endif
+}
+
+// ------------------------------------------------------------
+// Polling entrypoint — call this from your main loop
+// ------------------------------------------------------------
+void SwitchManager::service() {
+    // Maintain door & open-button overlays on edges
+    (void)isDoorOpen();
+    (void)isOpenButtonPressed();
+
+    // Handle BOOT button tap/hold state machine
+    handleBootTapHold_();
+}
+
+// ------------------------------------------------------------
+// Door reed (active-low: HIGH=open) — overlay on edge only
+// ------------------------------------------------------------
+bool SwitchManager::isDoorOpen() {
+    const bool open = (digitalRead(REED_SWITCH_PIN) == HIGH);
+
+    if (firstDoorSample_) {
+        firstDoorSample_ = false;
+        lastDoorOpen_ = open;               // silent baseline (no overlay)
+    } else if (open != lastDoorOpen_) {
+        DBGSTR();
+        DBG_PRINTLN("[SW] Door state change");
+        DBG_PRINT  ("      prev="); DBG_PRINTLN(lastDoorOpen_ ? "OPEN" : "CLOSED");
+        DBG_PRINT  ("      curr="); DBG_PRINTLN(open          ? "OPEN" : "CLOSED");
+        DBGSTP();
+
+        if (RGB) {
+            RGB->postOverlay(open ? OverlayEvent::DOOR_OPEN
+                                  : OverlayEvent::DOOR_CLOSED);
+        }
+        lastDoorOpen_ = open;
+    }
+
+    return open;
+}
+
+// ------------------------------------------------------------
+// Open button (active-low: LOW=pressed) — overlay on rising edge
+// ------------------------------------------------------------
+bool SwitchManager::isOpenButtonPressed() {
+    const bool pressed = (digitalRead(OPEN_SWITCH_PIN) == LOW);
+
+    if (pressed && !lastOpenBtn_) {
+        DBGSTR();
+        DBG_PRINTLN("[SW] Open button pressed (rising edge)");
+        DBGSTP();
+    }
+    lastOpenBtn_ = pressed;
+    return pressed;
+}
+
+// ------------------------------------------------------------
+// BOOT button tap/hold — same thresholds & prints as your task loop
+// ------------------------------------------------------------
+void SwitchManager::handleBootTapHold_() {
+    const bool pressed = (digitalRead(BUTTON_PIN) == LOW);
+    const uint32_t t   = nowMs();
+
+    // Edge: press down -> start timing
+    if (pressed && !bootPrev_) {
+        pressStartMs_ = t;
+    }
+
+    // Edge: release -> evaluate press duration
+    if (!pressed && bootPrev_) {
+        const uint32_t pressDur = t - pressStartMs_;
+
+        if (pressDur >= HOLD_THRESHOLD_MS) {
+            // === Long-press group ===
+            DBGSTR();
+            DBG_PRINTLN("[SW] Long press detected 🕒");
+            DBG_PRINTLN("###########################################################");
+            DBG_PRINTLN("#                   Resetting device 🔄                   #");
+            DBG_PRINTLN("###########################################################");
+            DBGSTP();
+
+            ResetManager::RequestFactoryReset("BOOT long press");
+
+            tapCount_  = 0;   // cancel any tap sequence
+            lastTapMs_ = 0;
+        } else {
+            // Short press → tap
+            tapCount_++;
+            lastTapMs_ = t;
+
+            DBGSTR();
+            DBG_PRINT  ("[SW] Tap detected (count="); DBG_PRINT((int)tapCount_);
+            DBG_PRINT  (", dur="); DBG_PRINT((int)pressDur);
+            DBG_PRINTLN(" ms)");
+            DBGSTP();
+
+            // Triple tap detection (kept exactly as your logic)
+            if (tapCount_ == 3) {
+                if ((t - lastTapMs_) <= TAP_WINDOW_MS) {
+                    DBGSTR();
+                    DBG_PRINTLN("[SW] Triple tap detected 🖱️🖱️🖱️");
+                    DBGSTP();
+                    tapCount_ = 0;
+                } else {
+                    DBGSTR();
+                    DBG_PRINTLN("[SW] Triple tap window elapsed; reset count");
+                    DBGSTP();
+                    tapCount_ = 0;
+                }
+            }
+        }
+    }
+
+    // Tap timeout (same threshold as your code path)
+    if (tapCount_ > 0 && (t - lastTapMs_) > 1500U) {
+        DBGSTR();
+        DBG_PRINTLN("[SW] Tap timeout ⏱️ → reset tapCount");
+        DBGSTP();
+        tapCount_ = 0;
+    }
+    bootPrev_ = pressed;
+}
+
+// ------------------------------------------------------------
+// IRQ support: door/open fast edge flags
+// ------------------------------------------------------------
+void IRAM_ATTR SwitchManager::doorIsrThunk_() {
+    if (s_instance_) {
+        s_instance_->onDoorEdge_();
+    }
+}
+
+void IRAM_ATTR SwitchManager::openIsrThunk_() {
+    if (s_instance_) {
+        s_instance_->onOpenEdge_();
+    }
+}
+
+void IRAM_ATTR SwitchManager::onDoorEdge_() {
+    doorEdgeFlag_ = true;
+}
+
+void IRAM_ATTR SwitchManager::onOpenEdge_() {
+    openEdgeFlag_ = true;
+}
+
