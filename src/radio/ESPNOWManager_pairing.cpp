@@ -15,7 +15,40 @@ constexpr uint32_t kPairInitAckDelayMs = 50;
 constexpr uint32_t kPairInitSecureDelayMs = 3000;
 constexpr uint32_t kPairInitRetryDelayMs = 500;
 
-bool parsePairInit_(const String& msg, uint8_t& channelOut) {
+bool parseCaps_(const String& msg, uint8_t& capsOut) {
+  int capsIdx = msg.indexOf("caps=");
+  if (capsIdx < 0) {
+    return false;
+  }
+  String caps = msg.substring(capsIdx + 5);
+  caps.trim();
+  uint8_t bits = 0;
+  auto readFlag = [&](char key, uint8_t bit) -> bool {
+    int idx = caps.indexOf(key);
+    if (idx < 0 || (idx + 1) >= caps.length()) {
+      return false;
+    }
+    char v = caps.charAt(idx + 1);
+    if (v == '1') {
+      bits |= bit;
+      return true;
+    }
+    if (v == '0') {
+      return true;
+    }
+    return false;
+  };
+  if (!readFlag('O', 0x01) ||
+      !readFlag('S', 0x02) ||
+      !readFlag('R', 0x04) ||
+      !readFlag('F', 0x08)) {
+    return false;
+  }
+  capsOut = bits;
+  return true;
+}
+
+bool parsePairInit_(const String& msg, uint8_t& channelOut, uint8_t& capsOut) {
   if (!msg.startsWith("PAIR_INIT:")) {
     return false;
   }
@@ -31,9 +64,15 @@ bool parsePairInit_(const String& msg, uint8_t& channelOut) {
   if (code != PAIR_INIT_CODE) {
     return false;
   }
-  String chanStr = msg.substring(chanIdx + 5);
+  int chanEnd = msg.indexOf(':', chanIdx);
+  String chanStr = (chanEnd >= 0)
+                       ? msg.substring(chanIdx + 5, chanEnd)
+                       : msg.substring(chanIdx + 5);
   int chan = chanStr.toInt();
   if (chan <= 0 || chan > 14) {
+    return false;
+  }
+  if (!parseCaps_(msg, capsOut)) {
     return false;
   }
   channelOut = static_cast<uint8_t>(chan);
@@ -146,7 +185,9 @@ bool EspNowManager::setupSecurePeer_(const uint8_t masterMac[6], uint8_t channel
 
 bool EspNowManager::handlePairInit_(const uint8_t masterMac[6], const String& msg) {
   uint8_t channel = 0;
-  if (!parsePairInit_(msg, channel)) {
+  uint8_t caps = 0;
+  if (!parsePairInit_(msg, channel, caps)) {
+    DBG_PRINTLN("[ESPNOW][pair] INIT parse failed");
     return false;
   }
 
@@ -154,23 +195,45 @@ bool EspNowManager::handlePairInit_(const uint8_t masterMac[6], const String& ms
   DBG_PRINTF("[ESPNOW][pair] Master MAC=%02X:%02X:%02X:%02X:%02X:%02X\n",
              masterMac[0], masterMac[1], masterMac[2],
              masterMac[3], masterMac[4], masterMac[5]);
+  DBG_PRINTF("[ESPNOW][pair] CAPS O=%u S=%u R=%u F=%u\n",
+             (caps & 0x01) ? 1u : 0u,
+             (caps & 0x02) ? 1u : 0u,
+             (caps & 0x04) ? 1u : 0u,
+             (caps & 0x08) ? 1u : 0u);
   storeMacAddress(masterMac);
   if (CONF) {
     CONF->PutInt(MASTER_CHANNEL_KEY, channel);
+    CONF->PutBool(HAS_OPEN_SWITCH_KEY,  (caps & 0x01) != 0);
+    CONF->PutBool(HAS_SHOCK_SENSOR_KEY, (caps & 0x02) != 0);
+    CONF->PutBool(HAS_REED_SWITCH_KEY,  (caps & 0x04) != 0);
+    CONF->PutBool(HAS_FINGERPRINT_KEY,  (caps & 0x08) != 0);
     CONF->PutBool(DEVICE_CONFIGURED, true);
     CONF->PutBool(ARMED_STATE, false);
     CONF->PutBool(MOTION_TRIG_ALARM, false);
   }
+  setCapBitsShadow_(caps);
 
   (void)setChannel_(channel);
-  (void)registerPeer(masterMac, false);
+  secure_ = false;
+  if (registerPeer(masterMac, false) != ESP_OK) {
+    DBG_PRINTLN("[ESPNOW][pair] Failed to add unencrypted master peer");
+    return false;
+  }
   const char* ack = ACK_PAIR_INIT;
-  sendData(masterMac, reinterpret_cast<const uint8_t*>(ack), strlen(ack) + 1);
+  DBG_PRINTLN("[ESPNOW][pair] Sending ACK_PAIR_INIT (unencrypted)");
+  if (sendData(masterMac, reinterpret_cast<const uint8_t*>(ack), strlen(ack) + 1) != ESP_OK) {
+    DBG_PRINTLN("[ESPNOW][pair] ACK_PAIR_INIT send failed");
+    unregisterPeer(masterMac);
+    return false;
+  }
   vTaskDelay(pdMS_TO_TICKS(kPairInitAckDelayMs));
+  DBG_PRINTLN("[ESPNOW][pair] Removing temporary unencrypted peer");
+  (void)unregisterPeer(masterMac);
   pendingPairInit_ = true;
   pendingPairInitMs_ = millis() + kPairInitSecureDelayMs;
   memcpy(pendingPairInitMac_, masterMac, sizeof(pendingPairInitMac_));
   pendingPairInitChannel_ = channel;
+  DBG_PRINTLN("[ESPNOW][pair] Scheduled secure rejoin");
   return true;
 }
 
@@ -202,6 +265,7 @@ void EspNowManager::pollPairing_() {
     pendingPairInitMs_ = now + kPairInitRetryDelayMs;
     return;
   }
+  DBG_PRINTLN("[ESPNOW][pair] Secure peer ready");
 
   lastHbMs_ = millis();
   online_ = true;

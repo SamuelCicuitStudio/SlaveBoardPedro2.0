@@ -154,6 +154,7 @@ esp_err_t EspNowManager::sendData(const uint8_t* peer_addr, const uint8_t* data,
   }
   DBG_PRINTF("[ESPNOW][sendData] -> %02X:%02X:%02X:%02X:%02X:%02X len=%u\n",
                peer_addr[0], peer_addr[1], peer_addr[2], peer_addr[3], peer_addr[4], peer_addr[5], (unsigned)len);
+  debugDumpPacket_("TX", data, len);
   return esp_now_send(peer_addr, data, len);
 }
 
@@ -297,6 +298,24 @@ bool EspNowManager::parseMacToBytes(const String& macAddress, uint8_t out[6]) {
   for (int i = 0; i < 6; ++i) out[i] = static_cast<uint8_t>(tmp[i]);
   DBG_PRINTLN(String("[ESPNOW][parseMacToBytes] OK: ") + macAddress);
   return true;
+}
+
+void EspNowManager::debugDumpPacket_(const char* tag, const uint8_t* data, size_t len) {
+  if (!tag || !data || len == 0) return;
+  char hex[(ESPNOW_MAX_DATA_LEN * 3) + 1];
+  size_t out = 0;
+  static const char kHex[] = "0123456789ABCDEF";
+  for (size_t i = 0; i < len && (out + 3) < sizeof(hex); ++i) {
+    hex[out++] = kHex[(data[i] >> 4) & 0x0F];
+    hex[out++] = kHex[data[i] & 0x0F];
+    if (i + 1 < len && (out + 1) < sizeof(hex)) {
+      hex[out++] = ' ';
+    }
+  }
+  hex[out] = '\0';
+  DBG_PRINTF("[ESPNOW][%s] len=%u data=", tag, (unsigned)len);
+  DBG_PRINT(hex);
+  DBG_PRINTLN("");
 }
 
 // =============================================================

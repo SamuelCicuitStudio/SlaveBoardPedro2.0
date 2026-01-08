@@ -66,7 +66,7 @@
 //  - IS_SLAVE_ALARM=false  => regular lock slave (motor / lock actuator)
 //  - IS_SLAVE_ALARM=true   => alarm-only slave (shock sensor / siren only)
 // ============================================================================
-//#define IS_SLAVE_ALARM false    // 🔒 false = Lock mode | 🚨 true = Alarm mode
+#define IS_SLAVE_ALARM false    // 🔒 false = Lock mode | 🚨 true = Alarm mode
 
 // ---------------------------
 // Storage helpers
@@ -192,8 +192,11 @@
 // ============================================================================
 //  Feature Toggles / Debug
 // ============================================================================
-#define USE_MAX17048            // Enable MAX17055/48 fuel gauge monitoring code
-#define ENABLE_SERIAL_DEBUG     // Global serial debug toggle
+// If false, PowerManager reports a fixed SOC and treats the gauge as online.
+#define USE_MAX17048 false
+#define FAKE_SOC_PERCENT 80
+#define FAKE_BATTERY_VOLTAGE_V 3.9f
+
 
 // ============================================================================
 //  ESP-NOW / Radio Config

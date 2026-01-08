@@ -41,6 +41,7 @@ void EspNowManager::onDataReceived(const uint8_t* mac_addr, const uint8_t* data,
 void EspNowManager::processRx(const RxEvent& e) {
   DBG_PRINTF("[ESPNOW][processRx] len=%d mac=%02X:%02X:%02X:%02X:%02X:%02X\n",
                e.len, e.mac[0], e.mac[1], e.mac[2], e.mac[3], e.mac[4], e.mac[5]);
+  debugDumpPacket_("RX", e.buf, static_cast<size_t>(e.len));
 
   // Feed raw frame into transport layer (binary protocol) from worker context.
   if (transport && isConfigured_()) {

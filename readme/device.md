@@ -7,7 +7,14 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 - Alarm role (`IS_SLAVE_ALARM=true`): motor/open/fingerprint are hard-disabled; shock and reed are forced enabled. Motor/FP objects are not constructed, motor commands are stubbed (UNSUPPORTED), and motor-style events are suppressed.
 
 ## Pairing and transport
-- Unpaired (`DEVICE_CONFIGURED=false`): no transport events; pairing INIT handled by ESP-NOW; critical battery sleeps immediately, low disables FP locally.
+- Unpaired (`DEVICE_CONFIGURED=false`): no transport events; pairing INIT handled by
+  ESP-NOW and must include channel + capability flags; ACK_PAIR_INIT is required
+  before secure pairing proceeds (no capability ACK). Critical battery sleeps
+  immediately, low disables FP locally. On `PAIR_INIT` unicast, the slave adds
+  the master as a temporary unencrypted peer, sends `ACK_PAIR_INIT`, removes
+  that peer, then restarts ESP-NOW in secure mode with PMK/LMK and the master MAC.
+  The `caps=...` flags in `PAIR_INIT` are applied immediately as the slave's
+  hardware capability set.
 - Paired: transport manager wired to ESP-NOW; handlers registered (Device, Shock, Motor stub if alarm role, Fingerprint if present).
 
 ## Command handling (via transport)

@@ -132,19 +132,27 @@ RAM-only per-slot fields:
 1) Start unencrypted ESP-NOW on the configured channel.
 2) Add the target MAC as a temporary unencrypted peer.
 3) Start RX-only worker to listen for `ACK_PAIR_INIT`.
-4) Send the unencrypted init string:
-   `PAIR_INIT:v1:code=PAIR_INIT:chan=<MASTER_CHANNEL>`
-5) Wait for `ACK_PAIR_INIT` from the same MAC (timeout
+4) **Deinit** ESP-NOW completely (stop callbacks, deinit stack).
+5) **Clear all peers**.
+6) Start ESP-NOW in **unencrypted** mode (no PMK/LMK).
+7) **Add only the target peer** (temporary list = 1).
+8) Send the unencrypted init string:
+   `PAIR_INIT:v1:code=PAIR_INIT:chan=<MASTER_CHANNEL>:caps=O{0|1}S{0|1}R{0|1}F{0|1}`
+9) Wait for `ACK_PAIR_INIT` from the same MAC (timeout
    `NOW_REMOVE_ACK_TIMEOUT_MS`, default 15000 ms).
-6) Tear down unencrypted ESP-NOW.
-7) Wait `NOW_PAIR_INIT_SECURE_DELAY_MS` (default 3000 ms).
-8) Restart secure ESP-NOW, set PMK, add all peers from NVS, start traffic.
+10) **Deinit** ESP-NOW again (pairing window ends).
+11) Wait `NOW_PAIR_INIT_SECURE_DELAY_MS` (default 3000 ms).
+12) Restart secure ESP-NOW, set PMK, add **all peers** from NVS (with LMK),
+    start traffic.
+13) Wait **5 seconds** before sending pings/heartbeats/other background traffic
+    to allow the slave to finish secure rejoin.
 
 ### Slot configuration (after init ACK)
 - Store MAC + LMK in NVS.
-- Save role/capability flags from pairing config.
+- Save role/capability flags from pairing config and init packet.
 - Add secure peer with derived LMK.
-- Send lock driver mode (if lock role) and capability set commands.
+- Send lock driver mode (if lock role) and other config commands. No capability
+  ACK is required; `ACK_PAIR_INIT` is the only required init confirmation.
 - Reboot the slave (`CMD_REBOOT`).
 - Mark owners dirty so capability ownership is re-evaluated.
 
@@ -282,10 +290,13 @@ The slave ESP-NOW layer must implement the following to match the master:
 
 ### Pairing and channel
 - Listen for the unencrypted init string:
-  `PAIR_INIT:v1:code=PAIR_INIT:chan=<N>`.
-- Reply with `ACK_PAIR_INIT (0xA2)` immediately.
-- Store master MAC from the sender address.
-- Set ESPNOW channel to `<N>` and rejoin secure mode after the master delay.
+  `PAIR_INIT:v1:code=PAIR_INIT:chan=<N>:caps=O{0|1}S{0|1}R{0|1}F{0|1}`.
+- On receipt (unicast from master):
+  1) Add the master MAC as a **temporary unencrypted peer** (no PMK/LMK).
+  2) Send `ACK_PAIR_INIT (0xA2)` immediately to that MAC.
+  3) Remove the temporary unencrypted master peer.
+  4) **Restart ESP-NOW in secure mode**, set PMK, add the master peer with LMK.
+- Store master MAC and channel `<N>` in NVS before secure rejoin.
 
 ### Secure keys (must match master)
 - Derive PMK and LMK exactly as in `SecurityKeys.hpp` using AP MACs.

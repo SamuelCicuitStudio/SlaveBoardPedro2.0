@@ -8,6 +8,18 @@
 // -------- Singleton backing pointer --------
 PowerManager* PowerManager::s_instance = nullptr;
 
+#ifndef USE_MAX17048
+#define USE_MAX17048 true
+#endif
+#if !USE_MAX17048
+#ifndef FAKE_SOC_PERCENT
+#define FAKE_SOC_PERCENT 80
+#endif
+#ifndef FAKE_BATTERY_VOLTAGE_V
+#define FAKE_BATTERY_VOLTAGE_V 3.9f
+#endif
+#endif
+
 void PowerManager::Init(TwoWire* wirePort) {
     if (!s_instance) {
         s_instance = new PowerManager(wirePort);
@@ -73,6 +85,24 @@ void PowerManager::begin() {
     pinMode(CHARGE_STATUS_PIN, INPUT_PULLUP);
     pinMode(USER_BUTTON_PIN,   INPUT_PULLUP);
     pinMode(BOOT_BUTTON_PIN,   INPUT_PULLUP);
+
+#if !USE_MAX17048
+    // Fake gauge: fixed SOC, always online.
+    lock_();
+    batteryPercentage = (float)FAKE_SOC_PERCENT;
+    batteryVoltage    = FAKE_BATTERY_VOLTAGE_V;
+    gaugeOnline       = true;
+    gaugeDataFresh    = true;
+    battInfoValid_    = true;
+    lastBattInfo_.online    = MAX17055::ONLINE;
+    lastBattInfo_.dataFresh = true;
+    lastBattInfo_.soc_pct   = batteryPercentage;
+    lastBattInfo_.voltage_V = batteryVoltage;
+    unlock_();
+
+    lastFastTickMs_ = lastEvalMs_ = ms();
+    return;
+#endif
 
 #if POWER_CLAMP_SOC_PERCENT > 0
     // Test mode: skip I2C bring-up and use fixed SOC/voltage.
@@ -158,6 +188,22 @@ void PowerManager::service() {
 }
 
 void PowerManager::fastTick() {
+#if !USE_MAX17048
+    lock_();
+    batteryPercentage = (float)FAKE_SOC_PERCENT;
+    batteryVoltage    = FAKE_BATTERY_VOLTAGE_V;
+    gaugeOnline       = true;
+    gaugeDataFresh    = true;
+    battInfoValid_    = true;
+    lastBattInfo_.online    = MAX17055::ONLINE;
+    lastBattInfo_.dataFresh = true;
+    lastBattInfo_.soc_pct   = batteryPercentage;
+    lastBattInfo_.voltage_V = batteryVoltage;
+    unlock_();
+    updateChargeStatus();
+    return;
+#endif
+
 #if POWER_CLAMP_SOC_PERCENT > 0
     // Test mode: no I2C probing; just keep charge status updated.
     updateChargeStatus();
@@ -186,7 +232,21 @@ void PowerManager::forceEvaluate() {
 
 // ---- Data access / logic ----
 float PowerManager::getBatteryPercentage() {
-#if POWER_CLAMP_SOC_PERCENT > 0
+#if !USE_MAX17048
+    lock_();
+    batteryPercentage = (float)FAKE_SOC_PERCENT;
+    batteryVoltage    = FAKE_BATTERY_VOLTAGE_V;
+    gaugeOnline       = true;
+    gaugeDataFresh    = true;
+    battInfoValid_    = true;
+    lastBattInfo_.online    = MAX17055::ONLINE;
+    lastBattInfo_.dataFresh = true;
+    lastBattInfo_.soc_pct   = batteryPercentage;
+    lastBattInfo_.voltage_V = batteryVoltage;
+    float outClamp = batteryPercentage;
+    unlock_();
+    return outClamp;
+#elif POWER_CLAMP_SOC_PERCENT > 0
     lock_();
     batteryPercentage = (float)POWER_CLAMP_SOC_PERCENT;
     batteryVoltage    = POWER_CLAMP_VOLTAGE_V;
@@ -326,7 +386,15 @@ bool PowerManager::isBatteryDataFresh() const {
 }
 
 bool PowerManager::getBatteryInfo(MAX17055::BattInfo& infoOut) const {
-#if POWER_CLAMP_SOC_PERCENT > 0
+#if !USE_MAX17048
+    MAX17055::BattInfo info{};
+    info.online    = MAX17055::ONLINE;
+    info.dataFresh = true;
+    info.soc_pct   = FAKE_SOC_PERCENT;
+    info.voltage_V = FAKE_BATTERY_VOLTAGE_V;
+    infoOut = info;
+    return true;
+#elif POWER_CLAMP_SOC_PERCENT > 0
     MAX17055::BattInfo info{};
     info.online    = MAX17055::OFFLINE;
     info.dataFresh = false;
@@ -356,6 +424,15 @@ bool PowerManager::getBatteryInfo(MAX17055::BattInfo& infoOut) const {
 }
 
 void PowerManager::updateGaugeOnlineState() {
+#if !USE_MAX17048
+    lock_();
+    gaugeOnline      = true;
+    gaugeDataFresh   = true;
+    lastOnlineState_ = MAX17055::ONLINE;
+    unlock_();
+    return;
+#endif
+
 #if POWER_CLAMP_SOC_PERCENT > 0
     return;
 #endif

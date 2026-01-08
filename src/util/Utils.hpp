@@ -3,7 +3,7 @@
 /**
  * @file Utils.h (RTOS-free)
  * @brief Synchronous Serial debug printing with optional simple grouping.
- *
+ *80:65:99:CC:C0:9C 
  * - No FreeRTOS usage: no tasks, no queues, no mutexes.
  * - DBG_PRINT/DBG_PRINTLN/DBG_PRINTF print directly to Serial.
  * - DBGSTR/DBGSTP capture a burst into a static buffer and flush on STOP.

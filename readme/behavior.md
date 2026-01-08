@@ -34,6 +34,12 @@ This document teaches an LLM how to **reason about and describe** the device’s
 - **Paired**: normal events/commands flow on transport.
 - **Unpaired**: ESPNOW remains in **pairing mode** and **does** exchange pairing traffic
   (PAIR_INIT/ACK, config status). Normal command/event traffic is suppressed.
+  Pair init includes channel + capability flags; the slave must ACK `PAIR_INIT`
+  before secure pairing/config traffic proceeds. No capability ACK is required.
+  On `PAIR_INIT` unicast, the slave adds the master as a temporary unencrypted
+  peer to send `ACK_PAIR_INIT`, then removes that peer and restarts ESP-NOW in
+  secure mode with PMK/LMK. The capability flags in `PAIR_INIT` are applied
+  immediately by the slave as its hardware capabilities.
 
 ---
 
@@ -58,6 +64,8 @@ This document teaches an LLM how to **reason about and describe** the device’s
 ### Unpaired (`DEVICE_CONFIGURED=false`)
 
 - **Pairing transport only** (PAIR_INIT/ACK, config status). No normal events/commands.
+  Pair init must carry capability flags (O/S/R/F) so the slave can store its
+  hardware caps immediately.
 - Advertising LED may blink; device sleeps per battery policy.
 - **Lock role only**: if battery is **Good**, the **open button may actuate the motor** (local control).
   If battery is **Low** or **Critical**, motor is disabled (see §5).

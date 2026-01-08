@@ -244,6 +244,7 @@ private:
     // Safe string builder
     static String makeSafeString_(const char* src, size_t n);
     static String extractCmdCode_(const String& msg);
+    static void   debugDumpPacket_(const char* tag, const uint8_t* data, size_t len);
 
     // Presence & Journal Helpers
     bool        pingMaster(uint8_t tries);
