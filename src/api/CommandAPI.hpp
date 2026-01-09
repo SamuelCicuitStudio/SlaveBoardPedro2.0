@@ -170,6 +170,7 @@ struct PairInit {                        // Frame layout used to start pairing/h
 // These toggle NVS key LOCK_EMAG_KEY via Device NvsWrite.
 #define CMD_LOCK_EMAG_ON        0x29  // Set lock driver to electromagnet (pulse) mode
 #define CMD_LOCK_EMAG_OFF       0x2A  // Set lock driver to screw motor (endstop) mode
+#define CMD_SET_CHANNEL         0x2B  // Set Wi-Fi/ESP-NOW channel (payload: channel u8; slave reboots)
 
 
 // ============================================================================
@@ -185,6 +186,7 @@ struct PairInit {                        // Frame layout used to start pairing/h
 
 // ---- Config / pairing ----
 #define ACK_PAIR_INIT           0xA2  // Pair init frame received
+#define ACK_SET_CHANNEL         0xA3  // Channel set accepted (reboot follows)
 #define ACK_CONFIGURED          0xA4  // Device configured/paired
 #define ACK_NOT_CONFIGURED      0xA5  // Device NOT configured/paired
 

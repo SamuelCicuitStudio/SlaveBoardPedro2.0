@@ -9,6 +9,9 @@
 #include <TransportManager.hpp>
 #include <Transport.hpp>
 #include <Utils.hpp>
+#include <esp_task_wdt.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 using transport::MessageType;
 using transport::Module;
@@ -110,6 +113,56 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
     DBG_PRINTLN("[ESPNOW][CMD] CMD_REBOOT -> Device Reboot");
     SendAck(ACK_REBOOT, true);
     ResetManager::RequestReboot("ESP-NOW CMD_REBOOT");
+    return;
+  }
+  if (opcode == CMD_SET_CHANNEL) {
+    if (!payload || payloadLen < 1) {
+      DBG_PRINTLN("[ESPNOW][CMD] CMD_SET_CHANNEL -> missing payload");
+      SendAck(ACK_UNINTENDED, false);
+      return;
+    }
+    const uint8_t channel = payload[0];
+    if (channel < 1 || channel > 13) {
+      DBG_PRINTF("[ESPNOW][CMD] CMD_SET_CHANNEL -> invalid=%u\n",
+                 static_cast<unsigned>(channel));
+      SendAck(ACK_ERR_POLICY, false);
+      return;
+    }
+    if (!CONF) {
+      DBG_PRINTLN("[ESPNOW][CMD] CMD_SET_CHANNEL -> conf missing");
+      SendAck(ACK_ERR_POLICY, false);
+      return;
+    }
+    DBG_PRINTF("[ESPNOW][CMD] CMD_SET_CHANNEL -> channel=%u (reboot)\n",
+               static_cast<unsigned>(channel));
+    CONF->PutIntImmediate(MASTER_CHANNEL_KEY, static_cast<int>(channel));
+
+    TxAckEvent ack{};
+    size_t frameLen = 0;
+    if (buildResponse_(ACK_SET_CHANNEL, nullptr, 0, ack.data, &frameLen)) {
+      ack.len = static_cast<uint16_t>(frameLen);
+      ack.status = true;
+      ack.attempts = 0;
+      if (!sendAckNow_(ack)) {
+        SendAck(ACK_SET_CHANNEL, true);
+      }
+    } else {
+      SendAck(ACK_SET_CHANNEL, true);
+    }
+
+    const uint32_t start = millis();
+    while ((millis() - start) < 500) {
+      bool inflight = false;
+      taskENTER_CRITICAL(&sendMux_);
+      inflight = hasInFlight_;
+      taskEXIT_CRITICAL(&sendMux_);
+      if (!inflight) {
+        break;
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+      esp_task_wdt_reset();
+    }
+    ResetManager::RequestReboot("ESP-NOW CMD_SET_CHANNEL");
     return;
   }
   if (opcode == CMD_FACTORY_RESET || opcode == CMD_REMOVE_SLAVE) {

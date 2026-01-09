@@ -137,25 +137,19 @@ esp_err_t EspNowManager::unregisterPeer(const uint8_t* peer_addr) {
 
 bool EspNowManager::setChannel_(uint8_t channel) {
   const uint8_t requested = channel;
-  if (requested == 0) {
-    DBG_PRINTF("[ESPNOW][setChannel] request=0 -> skip (keep=%u)\n",
-               (unsigned)channel_);
-    return true;
+  uint8_t primary = 0;
+  wifi_second_chan_t second = WIFI_SECOND_CHAN_NONE;
+  esp_err_t getErr = esp_wifi_get_channel(&primary, &second);
+  if (getErr == ESP_OK && primary != 0) {
+    channel_ = primary;
+    DBG_PRINTF("[ESPNOW][setChannel] skip (wifi current=%u)\n", (unsigned)channel_);
+  } else {
+    DBG_PRINTLN("[ESPNOW][setChannel] skip (wifi current unknown)");
   }
-  if (channel == channel_) {
-    DBG_PRINTF("[ESPNOW][setChannel] request=%u -> skip (already active)\n",
-               (unsigned)requested);
-    return true;
+  if (requested != 0 && channel_ != 0 && requested != channel_) {
+    DBG_PRINTF("[ESPNOW][setChannel] ignore requested=%u (wifi=%u)\n",
+               (unsigned)requested, (unsigned)channel_);
   }
-  DBG_PRINTF("[ESPNOW][setChannel] request=%u -> set=%u\n",
-             (unsigned)requested, (unsigned)channel);
-  esp_err_t err = esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
-  if (err != ESP_OK) {
-    DBG_PRINTF("[ESPNOW][setChannel] esp_wifi_set_channel failed: %d\n", (int)err);
-    return false;
-  }
-  channel_ = channel;
-  DBG_PRINTF("[ESPNOW][setChannel] active=%u\n", (unsigned)channel_);
   return true;
 }
 

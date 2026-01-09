@@ -309,6 +309,15 @@ void NVS::PutInt(const char* key, int value) {
     unlock_();
 }
 
+void NVS::PutIntImmediate(const char* key, int value) {
+    esp_task_wdt_reset();
+    lock_();
+    ensureOpenRW_();
+    if (preferences.isKey(key)) preferences.remove(key);
+    preferences.putInt(key, value);
+    unlock_();
+}
+
 void NVS::PutFloat(const char* key, float value) {
     esp_task_wdt_reset();
     lock_();

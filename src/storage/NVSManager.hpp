@@ -58,6 +58,7 @@ public:
     // -----------------------------------------------------------------
     void PutBool     (const char* key, bool value);
     void PutInt      (const char* key, int value);
+    void PutIntImmediate(const char* key, int value);
     void PutFloat    (const char* key, float value);
     void PutString   (const char* key, const String& value);
     void PutUInt     (const char* key, int value);
