@@ -137,8 +137,15 @@ esp_err_t EspNowManager::unregisterPeer(const uint8_t* peer_addr) {
 
 bool EspNowManager::setChannel_(uint8_t channel) {
   const uint8_t requested = channel;
-  if (channel == 0) {
-    channel = getDefaultChannel_();
+  if (requested == 0) {
+    DBG_PRINTF("[ESPNOW][setChannel] request=0 -> skip (keep=%u)\n",
+               (unsigned)channel_);
+    return true;
+  }
+  if (channel == channel_) {
+    DBG_PRINTF("[ESPNOW][setChannel] request=%u -> skip (already active)\n",
+               (unsigned)requested);
+    return true;
   }
   DBG_PRINTF("[ESPNOW][setChannel] request=%u -> set=%u\n",
              (unsigned)requested, (unsigned)channel);
@@ -157,9 +164,8 @@ bool EspNowManager::setupSecurePeer_(const uint8_t masterMac[6], uint8_t channel
     return false;
   }
   DBG_PRINTF("[ESPNOW][secure] Setup secure peer ch=%u\n", (unsigned)channel);
-  if (!setChannel_(channel)) {
-    return false;
-  }
+  (void)channel;
+  DBG_PRINTLN("[ESPNOW][secure] Skip channel change (keep current)");
   if (!setPmk_()) {
     return false;
   }
@@ -203,9 +209,6 @@ bool EspNowManager::handlePairInit_(const uint8_t masterMac[6], const uint8_t* d
   }
 
   uint8_t channel = channel_;
-  if (channel == 0) {
-    channel = getDefaultChannel_();
-  }
 
   DBG_PRINTF("[ESPNOW][pair] INIT OK: chan=%u\n", (unsigned)channel);
   DBG_PRINTF("[ESPNOW][pair] SEED=%lu\n", static_cast<unsigned long>(seed));
@@ -235,8 +238,7 @@ bool EspNowManager::handlePairInit_(const uint8_t masterMac[6], const uint8_t* d
   pendingPairInitAckOk_ = false;
   pendingPairInitAckDoneMs_ = 0;
   memcpy(pendingPairInitMac_, masterMac, 6);
-
-  (void)setChannel_(channel);
+  DBG_PRINTLN("[ESPNOW][pair] Skip channel change (use current)");
   secure_ = false;
   if (registerPeer(masterMac, false) != ESP_OK) {
     DBG_PRINTLN("[ESPNOW][pair] Failed to add unencrypted master peer");
