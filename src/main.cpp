@@ -11,6 +11,7 @@ Device device;
 
 void setup() {
     Debug::begin(SERIAL_BAUD_RATE);
+    delay(3000);
     NVS::Init();         // guarantees singleton exists
     CONF->begin();       // safe: Get() always returns a valid pointer
 

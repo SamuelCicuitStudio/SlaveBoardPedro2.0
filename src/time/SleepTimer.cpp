@@ -152,9 +152,9 @@ void SleepTimer::goToSleep() {
 
     DBGSTR();
     DBG_PRINTLN("[SLEEP] Preparing deep sleep… 💤");
-    DBG_PRINT  ("        configured="); DBG_PRINTLN(deviceConfigured ? "yes" : "no");
-    DBG_PRINT  ("        reed=");       DBG_PRINTLN(hasReed    ? "yes" : "no");
-    DBG_PRINT  ("        openBtn=");    DBG_PRINTLN(hasOpenBtn ? "yes" : "no");
+    DBG_PRINT  ("        configured="); DBG_PRINT(deviceConfigured ? "yes" : "no");
+    DBG_PRINT  ("        reed=");       DBG_PRINT(hasReed    ? "yes" : "no");
+    DBG_PRINT  ("        openBtn=");    DBG_PRINT(hasOpenBtn ? "yes" : "no");
     DBG_PRINT  ("        shock=");      DBG_PRINTLN(hasShock   ? "yes" : "no");
     DBGSTP();
 

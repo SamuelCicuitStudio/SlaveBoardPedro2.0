@@ -15,142 +15,117 @@
 
 #include <ConfigNvs.hpp>
 #include <WiFi.h>
-#include "esp_err.h"
-#include "esp_wifi.h"
-#include "mbedtls/sha256.h"
+#include "mbedtls/md.h"              // HMAC-SHA256
+#include "mbedtls/platform_util.h"   // for mbedtls_platform_zeroize
 
-static inline bool derivePmkFromMasterMac_(const uint8_t masterMac[6], uint8_t out[16]) {
-    if (!masterMac || !out) {
+#ifndef ESPNOW_PMK_HEX
+#define ESPNOW_PMK_HEX "A7F3C91D4E2B86A0D5C8F1B9047E3A6C"
+#endif
+
+// Security constants
+#define SECRET_KEY "indulock" // Static secret string (used as HMAC key)
+
+/**
+ * Deterministic, keyed LMK derivation:
+ *   LMK = Trunc16( HMAC-SHA256( key=SECRET_KEY, msg=masterMac||seed||"LMK-V2" ) )
+ *
+ * - Deterministic: same inputs => same output
+ * - Robust: checks all errors, never returns true on failure
+ * - Keyed: cannot be recomputed without SECRET_KEY
+ */
+static inline bool deriveLmkFromSeed_(const uint8_t masterMac[6],
+                                      uint32_t seed,
+                                      uint8_t out[16])
+{
+    if (masterMac == NULL || out == NULL) {
         return false;
     }
-    static const char salt[] = "PMK-V1";
-    uint8_t seed[6 + sizeof(salt) - 1] = {0};
-    memcpy(seed, masterMac, 6);
-    memcpy(seed + 6, salt, sizeof(salt) - 1);
 
-    uint8_t hash[32] = {0};
-    mbedtls_sha256_context ctx;
-    mbedtls_sha256_init(&ctx);
-    if (mbedtls_sha256_starts_ret(&ctx, 0) == 0) {
-        mbedtls_sha256_update_ret(&ctx, seed, sizeof(seed));
-        mbedtls_sha256_finish_ret(&ctx, hash);
+    // Bump this when you change any part of the derivation
+    static const uint8_t salt[] = { 'L','M','K','-','V','2' };
+
+    const uint8_t seedBytes[4] = {
+        (uint8_t)(seed >> 24),
+        (uint8_t)(seed >> 16),
+        (uint8_t)(seed >>  8),
+        (uint8_t)(seed >>  0),
+    };
+
+    // msg = masterMac(6) || seed(4, BE) || salt(6)
+    uint8_t msg[6 + 4 + sizeof(salt)];
+    memcpy(msg,      masterMac, 6);
+    memcpy(msg + 6,  seedBytes, 4);
+    memcpy(msg + 10, salt,      sizeof(salt));
+
+    const uint8_t* key = reinterpret_cast<const uint8_t*>(SECRET_KEY);
+    const size_t   keyLen = strlen(SECRET_KEY);
+    if (keyLen == 0) {
+        mbedtls_platform_zeroize(msg, sizeof(msg));
+        return false;
     }
-    mbedtls_sha256_free(&ctx);
-    memcpy(out, hash, 16);
+
+    const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (info == nullptr) {
+        mbedtls_platform_zeroize(msg, sizeof(msg));
+        return false;
+    }
+
+    uint8_t mac[32];
+    const int rc = mbedtls_md_hmac(info, key, keyLen, msg, sizeof(msg), mac);
+    if (rc != 0) {
+        mbedtls_platform_zeroize(msg, sizeof(msg));
+        mbedtls_platform_zeroize(mac, sizeof(mac));
+        return false;
+    }
+
+    memcpy(out, mac, 16);
+
+    mbedtls_platform_zeroize(msg, sizeof(msg));
+    mbedtls_platform_zeroize(mac, sizeof(mac));
     return true;
 }
 
-static inline bool deriveLmkFromMacs_(const uint8_t masterMac[6], const uint8_t slaveMac[6], uint8_t out[16]) {
-    if (!masterMac || !slaveMac || !out) {
-        return false;
-    }
-    static const char salt[] = "LMK-V1";
-    uint8_t seed[12 + sizeof(salt) - 1] = {0};
-    memcpy(seed, masterMac, 6);
-    memcpy(seed + 6, slaveMac, 6);
-    memcpy(seed + 12, salt, sizeof(salt) - 1);
-
-    uint8_t hash[32] = {0};
-    mbedtls_sha256_context ctx;
-    mbedtls_sha256_init(&ctx);
-    if (mbedtls_sha256_starts_ret(&ctx, 0) == 0) {
-        mbedtls_sha256_update_ret(&ctx, seed, sizeof(seed));
-        mbedtls_sha256_finish_ret(&ctx, hash);
-    }
-    mbedtls_sha256_free(&ctx);
-    memcpy(out, hash, 16);
-    return true;
-}
-
-static inline String generateMasterPmk_() {
-    uint8_t mac[6] = {0};
-    esp_err_t ret = esp_wifi_get_mac(WIFI_IF_AP, mac);
-    if (ret != ESP_OK) {
-        memset(mac, 0, sizeof(mac));
-    }
-
-    static const char salt[] = "PMK-V1";
-    uint8_t seed[6 + sizeof(salt) - 1] = {0};
-    memcpy(seed, mac, 6);
-    memcpy(seed + 6, salt, sizeof(salt) - 1);
-
-    uint8_t hash[32] = {0};
-    mbedtls_sha256_context ctx;
-    mbedtls_sha256_init(&ctx);
-    if (mbedtls_sha256_starts_ret(&ctx, 0) == 0) {
-        mbedtls_sha256_update_ret(&ctx, seed, sizeof(seed));
-        mbedtls_sha256_finish_ret(&ctx, hash);
-    }
-    mbedtls_sha256_free(&ctx);
-
-    char pmkHex[33] = {0};
-    for (int i = 0; i < 16; ++i) {
-        snprintf(pmkHex + (i * 2), 3, "%02X", hash[i]);
-    }
-    pmkHex[32] = '\0';
-    return String(pmkHex);
-}
-
-static inline String generateSlaveLmk_(const uint8_t slaveMac[6]) {
-    uint8_t masterMac[6] = {0};
-    esp_err_t ret = esp_wifi_get_mac(WIFI_IF_AP, masterMac);
-    if (ret != ESP_OK) {
-        memset(masterMac, 0, sizeof(masterMac));
-    }
-
-    static const char salt[] = "LMK-V1";
-    uint8_t seed[12 + sizeof(salt) - 1] = {0};
-    memcpy(seed, masterMac, 6);
-    memcpy(seed + 6, slaveMac, 6);
-    memcpy(seed + 12, salt, sizeof(salt) - 1);
-
-    uint8_t hash[32] = {0};
-    mbedtls_sha256_context ctx;
-    mbedtls_sha256_init(&ctx);
-    if (mbedtls_sha256_starts_ret(&ctx, 0) == 0) {
-        mbedtls_sha256_update_ret(&ctx, seed, sizeof(seed));
-        mbedtls_sha256_finish_ret(&ctx, hash);
-    }
-    mbedtls_sha256_free(&ctx);
-
-    char lmkHex[33] = {0};
-    for (int i = 0; i < 16; ++i) {
-        snprintf(lmkHex + (i * 2), 3, "%02X", hash[i]);
-    }
-    lmkHex[32] = '\0';
-    return String(lmkHex);
-}
-
-static inline String generateDeviceId_() {
-    String mac = WiFi.macAddress();
-    mac.replace(":", "");
-    mac.toUpperCase();
-    String macTail = mac.substring(6);
-
+// Helper: get 12-hex uppercase string of the eFuse MAC (48-bit)
+static inline String efuseMacHex12_() {
     const uint64_t efuse = ESP.getEfuseMac();
-    char efuseBuf[13] = {0};
-    snprintf(efuseBuf, sizeof(efuseBuf), "%010llX",
-             static_cast<unsigned long long>(efuse));
-    String efTail = String(efuseBuf);
-    if (efTail.length() > 6) {
-        efTail = efTail.substring(efTail.length() - 6);
-    }
 
-    return macTail + efTail;
+    // ESP.getEfuseMac() returns a 64-bit value, but the MAC is effectively 48 bits.
+    const uint64_t mac48 = (efuse & 0xFFFFFFFFFFFFULL);
+
+    char buf[13]; // 12 hex + NUL
+    snprintf(buf, sizeof(buf), "%012llX", (unsigned long long)mac48);
+    return String(buf); // already uppercase due to %X
 }
 
-static inline void generateDeviceNames_(String& deviceNameOut, String& configNameOut) {
-    String mac = WiFi.macAddress();
-    mac.replace(":", "");
-    mac.toUpperCase();
-    String macTail = mac.substring(6);
+// Deterministic Device ID: last 6 hex of eFuse MAC + last 6 hex again (or change pattern as you like)
+static inline String generateDeviceId_() {
+    const String mac12 = efuseMacHex12_();      // e.g. "A1B2C3D4E5F6"
+    const String tail6 = mac12.substring(6);    // e.g. "D4E5F6"
 
-    const char* letters[] = { "X", "W", "Z", "Q", "J" };
+    // If you want exactly 12 chars like before, keep it simple:
+    // return tail6 + tail6;
+
+    // Or, a slightly “mixed” deterministic 12 chars:
+    const String head6 = mac12.substring(0, 6); // e.g. "A1B2C3"
+    return tail6 + head6;                       // e.g. "D4E5F6A1B2C3"
+}
+
+// Deterministic names derived from eFuse MAC (no random())
+static inline void generateDeviceNames_(String& deviceNameOut, String& configNameOut) {
+    const String mac12 = efuseMacHex12_();   // "A1B2C3D4E5F6"
+
+    // Same letter set you used, but deterministic:
+    static const char* letters[] = { "X", "W", "Z", "Q", "J" };
+
     String fused;
-    for (int i = 0; i < macTail.length(); i += 2) {
-        String pair = macTail.substring(i, i + 2);
-        String randChar = letters[random(0, 5)];
-        fused += pair + randChar;
+    fused.reserve((mac12.length() / 2) * 3); // "AA" + "X" repeated
+
+    for (int i = 0; i < mac12.length(); i += 2) {
+        const String pair = mac12.substring(i, i + 2);  // two hex chars
+        const uint8_t byteVal = (uint8_t) strtoul(pair.c_str(), nullptr, 16);
+        const char* detChar = letters[byteVal % 5];
+        fused += pair;
+        fused += detChar;
     }
 
     deviceNameOut = String(DEVICE_NAME_DEFAULT) + "_" + fused;

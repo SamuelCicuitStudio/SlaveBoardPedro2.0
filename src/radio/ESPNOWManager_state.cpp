@@ -6,20 +6,11 @@
 #include <PowerManager.hpp>
 #include <SwitchManager.hpp>
 #include <Utils.hpp>
+#include <string.h>
 
 // =============================================================
 //  Helpers
 // =============================================================
-String EspNowManager::extractCmdCode_(const String& msg) {
-  int end = msg.length();
-  int space = msg.indexOf(' ');
-  if (space >= 0 && space < end) end = space;
-  int colon = msg.indexOf(':');
-  if (colon >= 0 && colon < end) end = colon;
-  if (end < 0) end = msg.length();
-  return msg.substring(0, end);
-}
-
 bool EspNowManager::isConfigured_() const {
   bool cfg = (CONF && CONF->GetBool(DEVICE_CONFIGURED, false));
   return cfg;
@@ -34,9 +25,8 @@ void EspNowManager::sendConfiguredBundle_(const char* reason) {
   // Battery report once at start
   if (Power) {
     uint8_t pct = (uint8_t)Power->getBatteryPercentage();
-    String batteryStatus = String(EVT_BATTERY_PREFIX) + ":" + String(pct);
     DBG_PRINTF("[ESPNOW][bundle] Battery=%u%%\n", (unsigned)pct);
-    SendAck(batteryStatus, true);
+    SendAck(EVT_BATTERY_PREFIX, &pct, 1, true);
   } else {
     DBG_PRINTLN("[ESPNOW][bundle] Power=null -> skip BAT");
   }
@@ -90,7 +80,8 @@ void EspNowManager::RequestOff() {
 void EspNowManager::RequesAlarm() {
   if (!isConfigured_()) return;
   DBG_PRINTLN("[ESPNOW][RequesAlarm] EVT_REED");
-  SendAck(String(EVT_REED) + ":1", false);
+  const uint8_t open = 1;
+  SendAck(EVT_REED, &open, 1, false);
 }
 
 void EspNowManager::RequestUnlock() {
@@ -110,24 +101,24 @@ void EspNowManager::sendState(const char* reason) {
     DBG_PRINTLN("[ESPNOW][STATE] Not configured -> skip");
     return;
   }
-  String line = String(ACK_STATE);
+  AckStatePayload payload{};
 
   const bool cfg   = isConfigured_();
   const bool armed = CONF ? CONF->GetBool(ARMED_STATE, false) : false;
   const bool motionEnabled = CONF ? CONF->GetBool(MOTION_TRIG_ALARM, false) : false;
-  line += " cfg="   + String((int)cfg);
-  line += " armed=" + String((int)armed);
-  line += " motion=" + String((int)motionEnabled);
-  line += " role=" + String(IS_SLAVE_ALARM ? 1 : 0);
+  payload.cfg = cfg ? 1 : 0;
+  payload.armed = armed ? 1 : 0;
+  payload.motion = motionEnabled ? 1 : 0;
+  payload.role = IS_SLAVE_ALARM ? 1 : 0;
 
   const bool lock = CONF ? CONF->GetBool(LOCK_STATE, true) : true;
   const bool door = sw ? sw->isDoorOpen() : false;
   const bool motorMoving =
       motor && (motor->getLockTaskHandle() != nullptr || motor->getUnlockTaskHandle() != nullptr);
 
-  line += " lock="  + String((int)lock);
-  line += " door="  + String((int)door);
-  line += " motor=" + String((int)motorMoving);
+  payload.lock = lock ? 1 : 0;
+  payload.door = door ? 1 : 0;
+  payload.motor = motorMoving ? 1 : 0;
 
   const int batt  = Power ? (int)Power->getBatteryPercentage() : -1;
   const int pmode = Power ? (int)Power->getPowerMode() : 0;
@@ -137,22 +128,27 @@ void EspNowManager::sendState(const char* reason) {
     if (critical) band = 2;
     else if (batt >= 0 && batt < LOW_BATT_TRHESHOLD) band = 1;
   }
-  if (batt >= 0) line += " batt=" + String(batt);
-  line += " pmode=" + String(pmode);
-  line += " band=" + String(band);
-  line += " breach=" + String((int)breach);
+  payload.batt = (batt >= 0 && batt <= 100) ? static_cast<uint8_t>(batt) : 0xFF;
+  payload.pmode = static_cast<uint8_t>(pmode);
+  payload.band = static_cast<uint8_t>(band);
+  payload.breach = breach ? 1 : 0;
 
-  const uint32_t up = millis();
-  line += " seq=" + String(++seq_);
-  line += " up="  + String(up);
+  payload.seq_le = ++seq_;
+  payload.up_ms_le = millis();
 
   if (reason && *reason) {
-    line += " reason=";
-    line += reason;
+    size_t n = strnlen(reason, NOW_STATE_REASON_MAX);
+    payload.reason_len = static_cast<uint8_t>(n);
+    if (n > 0) {
+      memcpy(payload.reason, reason, n);
+    }
   }
 
-  DBG_PRINTLN(String("[ESPNOW][STATE] Send: '") + line + "'");
-  SendAck(line, true);
+  DBG_PRINTLN("[ESPNOW][STATE] Send ACK_STATE");
+  SendAck(ACK_STATE,
+          reinterpret_cast<const uint8_t*>(&payload),
+          sizeof(payload),
+          true);
 }
 
 void EspNowManager::sendHeartbeat(bool force) {
@@ -166,9 +162,17 @@ void EspNowManager::sendHeartbeat(bool force) {
   }
   const uint32_t now = millis();
   lastHbMs_ = now;
-  String hb = String(ACK_HEARTBEAT) + " seq=" + String(++seq_) + " up=" + String(now);
-  DBG_PRINTLN(String("[ESPNOW][HB] Send: '") + hb + "'");
-  SendAck(hb, true);
+  struct HeartbeatPayload {
+    uint32_t seq_le;
+    uint32_t up_ms_le;
+  } payload{};
+  payload.seq_le = ++seq_;
+  payload.up_ms_le = now;
+  DBG_PRINTLN("[ESPNOW][HB] Send ACK_HEARTBEAT");
+  SendAck(ACK_HEARTBEAT,
+          reinterpret_cast<const uint8_t*>(&payload),
+          sizeof(payload),
+          true);
 }
 
 // =============================================================

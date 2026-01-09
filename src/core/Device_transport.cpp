@@ -6,9 +6,14 @@
 // =========================
 // Master comms (gated)
 // =========================
-void Device::sendAck_(const String& msg, bool ok) {
+void Device::sendAck_(uint16_t opcode, bool ok) {
   if (!isConfigured_() || !Now) return;
-  Now->SendAck(msg, ok);
+  Now->SendAck(opcode, ok);
+}
+
+void Device::sendAck_(uint16_t opcode, const uint8_t* payload, size_t payloadLen, bool ok) {
+  if (!isConfigured_() || !Now) return;
+  Now->SendAck(opcode, payload, payloadLen, ok);
 }
 void Device::sendMotionTrig_() {
   if (!isConfigured_() || !Now) return;

@@ -75,11 +75,17 @@ EspNowManager::~EspNowManager() {
 // =============================================================
 esp_err_t EspNowManager::init() {
   DBG_PRINTLN("[ESPNOW][init] Begin init()");
+  DBG_PRINTLN("[ESPNOW][init] Starting ESP-NOW stack...");
 
   uint8_t desiredChannel = getDefaultChannel_();
   if (CONF && CONF->GetBool(DEVICE_CONFIGURED, false)) {
     desiredChannel = static_cast<uint8_t>(
         CONF->GetInt(MASTER_CHANNEL_KEY, MASTER_CHANNEL_DEFAULT));
+    DBG_PRINTF("[ESPNOW][init] Configured: use stored channel=%u\n",
+               (unsigned)desiredChannel);
+  } else {
+    DBG_PRINTF("[ESPNOW][init] Unconfigured: use default channel=%u\n",
+               (unsigned)desiredChannel);
   }
   setChannel_(desiredChannel);
 
@@ -87,10 +93,14 @@ esp_err_t EspNowManager::init() {
     DBG_PRINTLN("[ESPNOW]Failed to initialize ESPNOW ");
     return ESP_FAIL;
   }
-
+  if (!setPmk_()) {
+    DBG_PRINTLN("[ESPNOW][init] Failed to set PMK");
+    return ESP_FAIL;
+  }
   DBG_PRINTLN("[ESPNOW][init] esp_now_init() OK, registering callbacks");
   esp_now_register_send_cb(onDataSent);
   esp_now_register_recv_cb(onDataReceived);
+
 
   // If already configured, ensure peer is registered and send startup bundle
   if (isConfigured_()) {
@@ -230,11 +240,16 @@ void EspNowManager::workerTask(void* selfPtr) {
       self->processRx(rx);
     }
 
-    // 2) Convert text acks to paced send entries (txQ -> sendQ)
+    // 2) Convert queued responses to paced send entries (txQ -> sendQ)
     TxAckEvent tx{};
     if (xQueueReceive(self->txQ, &tx, 0) == pdPASS) {
-      DBG_PRINTLN(String("[ESPNOW][worker][ACK] move to sendQ '") + tx.msg +
-                    "' attempt=" + String(tx.attempts) + " status=" + (tx.status ? "1" : "0"));
+      uint16_t opcode = 0;
+      if (tx.len >= 3) {
+        opcode = static_cast<uint16_t>(tx.data[1]) |
+                 (static_cast<uint16_t>(tx.data[2]) << 8);
+      }
+      DBG_PRINTF("[ESPNOW][worker][ACK] move to sendQ op=0x%04X attempt=%u status=%u\n",
+                 (unsigned)opcode, (unsigned)tx.attempts, (unsigned)(tx.status ? 1 : 0));
       (void)xQueueSend(self->sendQ, &tx, 0);
     }
 
@@ -446,9 +461,11 @@ size_t EspNowManager::flushJournalToMaster_() {
     // Feed watchdog between journal lines; flush can span many events.
     esp_task_wdt_reset();
 
-    // Replay as EVT_GENERIC:<line>
-    String payload = String(EVT_GENERIC) + ":" + line;
-    SendAck(payload, true);
+    // Replay as EVT_GENERIC with NDJSON payload bytes
+    SendAck(EVT_GENERIC,
+            reinterpret_cast<const uint8_t*>(line.c_str()),
+            static_cast<size_t>(line.length()),
+            true);
     ++sent;
 
     // Pace a little to let sendQ drain

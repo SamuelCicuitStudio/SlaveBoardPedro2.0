@@ -10,72 +10,27 @@
 #include <string.h>
 
 namespace {
-constexpr uint8_t kDefaultChannelFallback = 1;
-constexpr uint32_t kPairInitAckDelayMs = 50;
-constexpr uint32_t kPairInitSecureDelayMs = 3000;
-constexpr uint32_t kPairInitRetryDelayMs = 500;
+constexpr uint8_t kDefaultChannelFallback = 0;
+constexpr uint32_t kPairInitAckDelayMs = 300;
+constexpr size_t kPairInitPayloadLen = sizeof(PairInit);
 
-bool parseCaps_(const String& msg, uint8_t& capsOut) {
-  int capsIdx = msg.indexOf("caps=");
-  if (capsIdx < 0) {
+bool parsePairInit_(const uint8_t* data, size_t len, uint8_t& capsOut, uint32_t& seedOut) {
+  if (!data || len < kPairInitPayloadLen) {
     return false;
   }
-  String caps = msg.substring(capsIdx + 5);
-  caps.trim();
-  uint8_t bits = 0;
-  auto readFlag = [&](char key, uint8_t bit) -> bool {
-    int idx = caps.indexOf(key);
-    if (idx < 0 || (idx + 1) >= caps.length()) {
-      return false;
-    }
-    char v = caps.charAt(idx + 1);
-    if (v == '1') {
-      bits |= bit;
-      return true;
-    }
-    if (v == '0') {
-      return true;
-    }
-    return false;
-  };
-  if (!readFlag('O', 0x01) ||
-      !readFlag('S', 0x02) ||
-      !readFlag('R', 0x04) ||
-      !readFlag('F', 0x08)) {
+  if (data[0] != NOW_FRAME_PAIR_INIT) {
     return false;
   }
-  capsOut = bits;
-  return true;
-}
-
-bool parsePairInit_(const String& msg, uint8_t& channelOut, uint8_t& capsOut) {
-  if (!msg.startsWith("PAIR_INIT:")) {
+  const uint8_t caps = data[1];
+  if ((caps & 0xF0) != 0) {
     return false;
   }
-  int codeIdx = msg.indexOf("code=");
-  int chanIdx = msg.indexOf("chan=");
-  if (codeIdx < 0 || chanIdx < 0) {
-    return false;
-  }
-  int codeEnd = msg.indexOf(':', codeIdx);
-  String code = (codeEnd >= 0)
-                    ? msg.substring(codeIdx + 5, codeEnd)
-                    : msg.substring(codeIdx + 5);
-  if (code != PAIR_INIT_CODE) {
-    return false;
-  }
-  int chanEnd = msg.indexOf(':', chanIdx);
-  String chanStr = (chanEnd >= 0)
-                       ? msg.substring(chanIdx + 5, chanEnd)
-                       : msg.substring(chanIdx + 5);
-  int chan = chanStr.toInt();
-  if (chan <= 0 || chan > 14) {
-    return false;
-  }
-  if (!parseCaps_(msg, capsOut)) {
-    return false;
-  }
-  channelOut = static_cast<uint8_t>(chan);
+  const uint32_t seed = (static_cast<uint32_t>(data[2]) << 24) |
+                        (static_cast<uint32_t>(data[3]) << 16) |
+                        (static_cast<uint32_t>(data[4]) << 8)  |
+                        (static_cast<uint32_t>(data[5]) << 0);
+  capsOut = caps;
+  seedOut = seed;
   return true;
 }
 
@@ -89,6 +44,31 @@ void bytesToHex_(const uint8_t* data, size_t len, char* out, size_t outLen) {
     out[i * 2 + 1] = kHex[data[i] & 0x0F];
   }
   out[len * 2] = '\0';
+}
+
+bool hexToBytes_(const char* hex, uint8_t* out, size_t outLen) {
+  if (!hex || !out || outLen == 0) {
+    return false;
+  }
+  const size_t hexLen = strlen(hex);
+  if (hexLen != outLen * 2) {
+    return false;
+  }
+  for (size_t i = 0; i < outLen; ++i) {
+    char hi = hex[i * 2];
+    char lo = hex[i * 2 + 1];
+    int hiVal = (hi >= '0' && hi <= '9') ? (hi - '0') :
+                (hi >= 'A' && hi <= 'F') ? (hi - 'A' + 10) :
+                (hi >= 'a' && hi <= 'f') ? (hi - 'a' + 10) : -1;
+    int loVal = (lo >= '0' && lo <= '9') ? (lo - '0') :
+                (lo >= 'A' && lo <= 'F') ? (lo - 'A' + 10) :
+                (lo >= 'a' && lo <= 'f') ? (lo - 'a' + 10) : -1;
+    if (hiVal < 0 || loVal < 0) {
+      return false;
+    }
+    out[i] = static_cast<uint8_t>((hiVal << 4) | loVal);
+  }
+  return true;
 }
 
 } // namespace
@@ -119,15 +99,22 @@ esp_err_t EspNowManager::registerPeer(const uint8_t* peer_addr, bool encrypt) {
   peerInfo.channel = channel_;
   peerInfo.encrypt = encrypt;
   if (encrypt) {
-    uint8_t lmk[16] = {0};
-    uint8_t slaveMac[6] = {0};
-    if (esp_wifi_get_mac(WIFI_IF_STA, slaveMac) == ESP_OK &&
-        deriveLmkFromMacs_(peer_addr, slaveMac, lmk)) {
-      char lmkHex[33] = {0};
-      bytesToHex_(lmk, sizeof(lmk), lmkHex, sizeof(lmkHex));
-      DBG_PRINTF("[ESPNOW][pair] LMK=%s\n", lmkHex);
-      memcpy(peerInfo.lmk, lmk, sizeof(lmk));
+    if (!CONF) {
+      DBG_PRINTLN("[ESPNOW][registerPeer] Conf missing for LMK");
+      return ESP_ERR_INVALID_STATE;
     }
+    String lmkHex = CONF->GetString(MASTER_LMK_KEY, MASTER_LMK_DEFAULT);
+    if (lmkHex.length() != 32) {
+      DBG_PRINTLN("[ESPNOW][registerPeer] Missing or invalid LMK");
+      return ESP_ERR_INVALID_ARG;
+    }
+    uint8_t lmk[16] = {0};
+    if (!hexToBytes_(lmkHex.c_str(), lmk, sizeof(lmk))) {
+      DBG_PRINTLN("[ESPNOW][registerPeer] LMK hex parse failed");
+      return ESP_ERR_INVALID_ARG;
+    }
+    DBG_PRINTF("[ESPNOW][pair] LMK=%s\n", lmkHex.c_str());
+    memcpy(peerInfo.lmk, lmk, sizeof(lmk));
   }
   esp_err_t r = esp_now_add_peer(&peerInfo);
 
@@ -149,15 +136,19 @@ esp_err_t EspNowManager::unregisterPeer(const uint8_t* peer_addr) {
 }
 
 bool EspNowManager::setChannel_(uint8_t channel) {
+  const uint8_t requested = channel;
   if (channel == 0) {
     channel = getDefaultChannel_();
   }
+  DBG_PRINTF("[ESPNOW][setChannel] request=%u -> set=%u\n",
+             (unsigned)requested, (unsigned)channel);
   esp_err_t err = esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
   if (err != ESP_OK) {
     DBG_PRINTF("[ESPNOW][setChannel] esp_wifi_set_channel failed: %d\n", (int)err);
     return false;
   }
   channel_ = channel;
+  DBG_PRINTF("[ESPNOW][setChannel] active=%u\n", (unsigned)channel_);
   return true;
 }
 
@@ -165,33 +156,59 @@ bool EspNowManager::setupSecurePeer_(const uint8_t masterMac[6], uint8_t channel
   if (!masterMac) {
     return false;
   }
+  DBG_PRINTF("[ESPNOW][secure] Setup secure peer ch=%u\n", (unsigned)channel);
   if (!setChannel_(channel)) {
     return false;
   }
+  if (!setPmk_()) {
+    return false;
+  }
+  if (registerPeer(masterMac, true) != ESP_OK) {
+    secure_ = false;
+    return false;
+  }
+  secure_ = true;
+  return true;
+}
+
+bool EspNowManager::setPmk_() {
   uint8_t pmk[16] = {0};
-  if (!derivePmkFromMasterMac_(masterMac, pmk)) {
+  if (!hexToBytes_(ESPNOW_PMK_HEX, pmk, sizeof(pmk))) {
     return false;
   }
   char pmkHex[33] = {0};
   bytesToHex_(pmk, sizeof(pmk), pmkHex, sizeof(pmkHex));
-  DBG_PRINTF("[ESPNOW][pair] PMK=%s\n", pmkHex);
+  DBG_PRINTF("[ESPNOW][pmk] PMK=%s\n", pmkHex);
   if (esp_now_set_pmk(pmk) != ESP_OK) {
-    DBG_PRINTLN("[ESPNOW][secure] esp_now_set_pmk failed");
+    DBG_PRINTLN("[ESPNOW][pmk] esp_now_set_pmk failed");
     return false;
   }
-  secure_ = true;
-  return registerPeer(masterMac, true) == ESP_OK;
+  DBG_PRINTLN("[ESPNOW][pmk] PMK applied");
+  return true;
 }
 
-bool EspNowManager::handlePairInit_(const uint8_t masterMac[6], const String& msg) {
-  uint8_t channel = 0;
-  uint8_t caps = 0;
-  if (!parsePairInit_(msg, channel, caps)) {
-    DBG_PRINTLN("[ESPNOW][pair] INIT parse failed");
+bool EspNowManager::handlePairInit_(const uint8_t masterMac[6], const uint8_t* data, size_t len) {
+  if (!masterMac || !data) {
     return false;
+  }
+  if (pendingPairInit_) {
+    DBG_PRINTLN("[ESPNOW][pair] INIT ignored: pairing already pending");
+    return true;
+  }
+
+  uint8_t caps = 0;
+  uint32_t seed = 0;
+  if (!parsePairInit_(data, len, caps, seed)) {
+    return false;
+  }
+
+  uint8_t channel = channel_;
+  if (channel == 0) {
+    channel = getDefaultChannel_();
   }
 
   DBG_PRINTF("[ESPNOW][pair] INIT OK: chan=%u\n", (unsigned)channel);
+  DBG_PRINTF("[ESPNOW][pair] SEED=%lu\n", static_cast<unsigned long>(seed));
   DBG_PRINTF("[ESPNOW][pair] Master MAC=%02X:%02X:%02X:%02X:%02X:%02X\n",
              masterMac[0], masterMac[1], masterMac[2],
              masterMac[3], masterMac[4], masterMac[5]);
@@ -200,74 +217,136 @@ bool EspNowManager::handlePairInit_(const uint8_t masterMac[6], const String& ms
              (caps & 0x02) ? 1u : 0u,
              (caps & 0x04) ? 1u : 0u,
              (caps & 0x08) ? 1u : 0u);
-  storeMacAddress(masterMac);
-  if (CONF) {
-    CONF->PutInt(MASTER_CHANNEL_KEY, channel);
-    CONF->PutBool(HAS_OPEN_SWITCH_KEY,  (caps & 0x01) != 0);
-    CONF->PutBool(HAS_SHOCK_SENSOR_KEY, (caps & 0x02) != 0);
-    CONF->PutBool(HAS_REED_SWITCH_KEY,  (caps & 0x04) != 0);
-    CONF->PutBool(HAS_FINGERPRINT_KEY,  (caps & 0x08) != 0);
-    CONF->PutBool(DEVICE_CONFIGURED, true);
-    CONF->PutBool(ARMED_STATE, false);
-    CONF->PutBool(MOTION_TRIG_ALARM, false);
+  DBG_PRINTLN("[ESPNOW][pair] Step 1: add temporary unencrypted peer");
+
+  uint8_t lmk[16] = {0};
+  if (!deriveLmkFromSeed_(masterMac, seed, lmk)) {
+    DBG_PRINTLN("[ESPNOW][pair] LMK derivation failed");
+    return false;
   }
-  setCapBitsShadow_(caps);
+
+  pendingPairInit_ = true;
+  pendingPairInitMs_ = millis();
+  pendingPairInitChannel_ = channel;
+  pendingPairInitCaps_ = caps;
+  pendingPairInitSeed_ = seed;
+  pendingPairInitAckInFlight_ = false;
+  pendingPairInitAckDone_ = false;
+  pendingPairInitAckOk_ = false;
+  pendingPairInitAckDoneMs_ = 0;
+  memcpy(pendingPairInitMac_, masterMac, 6);
 
   (void)setChannel_(channel);
   secure_ = false;
   if (registerPeer(masterMac, false) != ESP_OK) {
     DBG_PRINTLN("[ESPNOW][pair] Failed to add unencrypted master peer");
+    clearPendingPairInit_("peer add failed", false);
     return false;
   }
-  const char* ack = ACK_PAIR_INIT;
-  DBG_PRINTLN("[ESPNOW][pair] Sending ACK_PAIR_INIT (unencrypted)");
-  if (sendData(masterMac, reinterpret_cast<const uint8_t*>(ack), strlen(ack) + 1) != ESP_OK) {
+
+  uint8_t resp[ESPNOW_MAX_DATA_LEN];
+  size_t respLen = 0;
+  if (!buildResponse_(ACK_PAIR_INIT, nullptr, 0, resp, &respLen)) {
+    DBG_PRINTLN("[ESPNOW][pair] ACK_PAIR_INIT build failed");
+    clearPendingPairInit_("ack build failed", true);
+    return false;
+  }
+  pendingPairInitAckInFlight_ = true;
+  DBG_PRINTLN("[ESPNOW][pair] Step 2: send ACK_PAIR_INIT (unencrypted)");
+  if (sendData(masterMac, resp, respLen) != ESP_OK) {
     DBG_PRINTLN("[ESPNOW][pair] ACK_PAIR_INIT send failed");
-    unregisterPeer(masterMac);
+    pendingPairInitAckInFlight_ = false;
+    clearPendingPairInit_("ack send failed", true);
     return false;
   }
-  vTaskDelay(pdMS_TO_TICKS(kPairInitAckDelayMs));
-  DBG_PRINTLN("[ESPNOW][pair] Removing temporary unencrypted peer");
-  (void)unregisterPeer(masterMac);
-  pendingPairInit_ = true;
-  pendingPairInitMs_ = millis() + kPairInitSecureDelayMs;
-  memcpy(pendingPairInitMac_, masterMac, sizeof(pendingPairInitMac_));
-  pendingPairInitChannel_ = channel;
-  DBG_PRINTLN("[ESPNOW][pair] Scheduled secure rejoin");
+  DBG_PRINTLN("[ESPNOW][pair] Waiting for ACK delivery result...");
+
   return true;
+}
+
+void EspNowManager::finalizePairInit_() {
+  if (!pendingPairInit_) {
+    return;
+  }
+  if (!CONF) {
+    clearPendingPairInit_("conf missing", true);
+    return;
+  }
+
+  DBG_PRINTLN("[ESPNOW][pair] Step 3: apply caps + store pairing data (after ACK OK)");
+  uint8_t lmk[16] = {0};
+  if (!deriveLmkFromSeed_(pendingPairInitMac_, pendingPairInitSeed_, lmk)) {
+    DBG_PRINTLN("[ESPNOW][pair] LMK derivation failed (finalize)");
+    clearPendingPairInit_("lmk derive failed", true);
+    return;
+  }
+
+  char lmkHex[33] = {0};
+  bytesToHex_(lmk, sizeof(lmk), lmkHex, sizeof(lmkHex));
+
+  storeMacAddress(pendingPairInitMac_);
+  CONF->PutInt(MASTER_CHANNEL_KEY, pendingPairInitChannel_);
+  CONF->PutBool(HAS_OPEN_SWITCH_KEY,  (pendingPairInitCaps_ & 0x01) != 0);
+  CONF->PutBool(HAS_SHOCK_SENSOR_KEY, (pendingPairInitCaps_ & 0x02) != 0);
+  CONF->PutBool(HAS_REED_SWITCH_KEY,  (pendingPairInitCaps_ & 0x04) != 0);
+  CONF->PutBool(HAS_FINGERPRINT_KEY,  (pendingPairInitCaps_ & 0x08) != 0);
+  CONF->PutBool(DEVICE_CONFIGURED, true);
+  CONF->PutBool(ARMED_STATE, false);
+  CONF->PutBool(MOTION_TRIG_ALARM, false);
+  CONF->PutString(MASTER_LMK_KEY, String(lmkHex));
+  setCapBitsShadow_(pendingPairInitCaps_);
+
+  DBG_PRINTLN("[ESPNOW][pair] Step 4: remove temporary unencrypted peer");
+  (void)unregisterPeer(pendingPairInitMac_);
+  if (!setupSecurePeer_(pendingPairInitMac_, pendingPairInitChannel_)) {
+    DBG_PRINTLN("[ESPNOW][pair] secure peer setup failed");
+    CONF->PutBool(DEVICE_CONFIGURED, false);
+    CONF->PutString(MASTER_LMK_KEY, MASTER_LMK_DEFAULT);
+    clearPendingPairInit_("secure setup failed", false);
+    return;
+  }
+
+  DBG_PRINTLN("[ESPNOW][pair] Step 5: secure peer ready, send configured bundle");
+  lastHbMs_ = millis();
+  online_ = true;
+  sendConfiguredBundle_("PAIR_INIT");
+  clearPendingPairInit_("paired", false);
+}
+
+void EspNowManager::clearPendingPairInit_(const char* reason, bool removePeer) {
+  if (reason) {
+    DBG_PRINTLN(String("[ESPNOW][pair] Clear pending: ") + reason);
+  }
+  if (removePeer && pendingPairInit_) {
+    (void)unregisterPeer(pendingPairInitMac_);
+  }
+  pendingPairInit_ = false;
+  pendingPairInitMs_ = 0;
+  pendingPairInitChannel_ = MASTER_CHANNEL_DEFAULT;
+  pendingPairInitCaps_ = 0;
+  pendingPairInitSeed_ = 0;
+  pendingPairInitAckInFlight_ = false;
+  pendingPairInitAckDone_ = false;
+  pendingPairInitAckOk_ = false;
+  pendingPairInitAckDoneMs_ = 0;
+  memset(pendingPairInitMac_, 0, sizeof(pendingPairInitMac_));
 }
 
 void EspNowManager::pollPairing_() {
   if (!pendingPairInit_) {
     return;
   }
+  if (!pendingPairInitAckDone_) {
+    return;
+  }
+  if (!pendingPairInitAckOk_) {
+    clearPendingPairInit_("ack failed", true);
+    return;
+  }
   const uint32_t now = millis();
-  if (static_cast<int32_t>(now - pendingPairInitMs_) < 0) {
+  if (now - pendingPairInitAckDoneMs_ < kPairInitAckDelayMs) {
     return;
   }
-
-  DBG_PRINTLN("[ESPNOW][pair] Switching to secure mode");
-  pendingPairInit_ = false;
-
-  esp_now_deinit();
-  if (esp_now_init() != ESP_OK) {
-    DBG_PRINTLN("[ESPNOW][pair] esp_now_init failed (secure)");
-    pendingPairInit_ = true;
-    pendingPairInitMs_ = now + kPairInitRetryDelayMs;
-    return;
-  }
-
-  esp_now_register_send_cb(onDataSent);
-  esp_now_register_recv_cb(onDataReceived);
-  if (!setupSecurePeer_(pendingPairInitMac_, pendingPairInitChannel_)) {
-    DBG_PRINTLN("[ESPNOW][pair] secure peer setup failed");
-    pendingPairInit_ = true;
-    pendingPairInitMs_ = now + kPairInitRetryDelayMs;
-    return;
-  }
-  DBG_PRINTLN("[ESPNOW][pair] Secure peer ready");
-
-  lastHbMs_ = millis();
-  online_ = true;
-  sendConfiguredBundle_("PAIR_INIT");
+  DBG_PRINTLN("[ESPNOW][pair] ACK delivered OK + delay elapsed -> finalize pairing");
+  finalizePairInit_();
 }

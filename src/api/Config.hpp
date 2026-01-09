@@ -16,7 +16,7 @@
  * @details
  * MASTER ⇄ SLAVE: What the Master must know about this Slave (7 points)
  * 1) Identity & Pairing
- *    - Keys: DEVICE_NAME, DEVICE_ID, MASTER_ESPNOW_ID, AUTH_TOKEN, DEVICE_CONFIGURED, RESET_FLAG
+ *    - Keys: DEVICE_NAME, DEVICE_ID, MASTER_ESPNOW_ID, DEVICE_CONFIGURED, RESET_FLAG
  *    - Purpose: identify this unit, verify pairing, and know if it’s been fully configured.
  *
  * 2) Capabilities Map (Hardware Presence)
@@ -202,7 +202,6 @@
 //  ESP-NOW / Radio Config
 // ============================================================================
 #define PREER_CHANNEL           0
-#define PREER_ENCRYPT           false
 
 #endif // CONFIG_H
 

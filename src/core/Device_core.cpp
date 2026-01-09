@@ -50,8 +50,8 @@ void Device::begin() {
       );
       DBG_PRINTLN("#               Master ID: " + master + "              #");
     } else {
-      DBG_PRINTLN("#         [Pairing]  Not Configured (Unpaired)          #");
-      DBG_PRINTLN("#      Waiting for INIT from master to start pairing...    #");
+      DBG_PRINTLN("#         [Pairing]  Not Configured (Unpaired)            #");
+      DBG_PRINTLN("#      Waiting for INIT from master to start pairing...   #");
     }
     DBG_PRINTLN("###########################################################");
     DBGSTP();

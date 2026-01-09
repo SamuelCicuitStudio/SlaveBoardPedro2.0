@@ -7,7 +7,7 @@ ShockSensor* ShockSensor::s_instance_ = nullptr;
 
 // Constructor
 ShockSensor::ShockSensor() {
-    DBGSTR();
+    DBGSTR();DBG_PRINTLN();
     DBG_PRINTLN("###########################################################");
     DBG_PRINTLN("#                 Starting Shock Manager                  #");
     DBG_PRINTLN("###########################################################");

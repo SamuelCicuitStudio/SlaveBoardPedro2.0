@@ -8,10 +8,21 @@
 // =============================================================
 //  Callbacks
 // =============================================================
-void EspNowManager::onDataSent(const uint8_t* /*mac_addr*/, esp_now_send_status_t status) {
+void EspNowManager::onDataSent(const uint8_t* mac_addr, esp_now_send_status_t status) {
   if (!instance) return;
 
   DBG_PRINTF("[ESPNOW][TX][onDataSent] status=%d\n", (int)status);
+
+  if (instance->pendingPairInitAckInFlight_ && instance->pendingPairInit_) {
+    if (mac_addr && memcmp(mac_addr, instance->pendingPairInitMac_, 6) == 0) {
+      instance->pendingPairInitAckInFlight_ = false;
+      instance->pendingPairInitAckDone_ = true;
+      instance->pendingPairInitAckOk_ = (status == ESP_NOW_SEND_SUCCESS);
+      instance->pendingPairInitAckDoneMs_ = millis();
+      DBG_PRINTF("[ESPNOW][pair] ACK_PAIR_INIT delivered=%u\n",
+                 (unsigned)(instance->pendingPairInitAckOk_ ? 1 : 0));
+    }
+  }
 
   if (status == ESP_NOW_SEND_SUCCESS) {
     taskENTER_CRITICAL(&instance->sendMux_);
@@ -49,7 +60,11 @@ void EspNowManager::onDataSent(const uint8_t* /*mac_addr*/, esp_now_send_status_
 // =============================================================
 //  Public API (TX)
 // =============================================================
-void EspNowManager::SendAck(const String& Msg, bool Status) {
+void EspNowManager::SendAck(uint16_t opcode, bool Status) {
+  SendAck(opcode, nullptr, 0, Status);
+}
+
+void EspNowManager::SendAck(uint16_t opcode, const uint8_t* payload, size_t payloadLen, bool Status) {
   if (!isConfigured_()) { DBG_PRINTLN("[ESPNOW][SendAck] Ignored: not configured"); return; }
   if (!txQ)             { DBG_PRINTLN("[ESPNOW][SendAck] txQ=null"); return; }
   if (CONF) {
@@ -62,18 +77,29 @@ void EspNowManager::SendAck(const String& Msg, bool Status) {
   TxAckEvent e{};
   e.status   = Status;
   e.attempts = 0;  // first try
-  size_t maxC = sizeof(e.msg) - 1;
-  Msg.substring(0, maxC).toCharArray(e.msg, sizeof(e.msg));
+  size_t frameLen = 0;
+  if (!buildResponse_(opcode, payload, payloadLen, e.data, &frameLen)) {
+    DBG_PRINTLN("[ESPNOW][SendAck] buildResponse failed");
+    return;
+  }
+  e.len = static_cast<uint16_t>(frameLen);
 
-  DBG_PRINTLN(String("[ESPNOW][ACK][enqueue] '") + e.msg + "' status=" + (Status ? "1" : "0"));
+  DBG_PRINTF("[ESPNOW][ACK][enqueue] op=0x%04X len=%u status=%u\n",
+             (unsigned)opcode, (unsigned)e.len, (unsigned)(Status ? 1 : 0));
   if (xQueueSend(txQ, &e, 0) != pdPASS) {
     DBG_PRINTLN("[ESPNOW][ACK] txQ full (drop)");
   }
 }
 
 void EspNowManager::doSendAck(const TxAckEvent& e) {
-  DBG_PRINTLN(String("[ESPNOW][ACK][doSendAck] '") + e.msg +
-                "' attempt=" + String(e.attempts) + " status=" + (e.status ? "1" : "0"));
+  uint16_t opcode = 0;
+  if (e.len >= 3) {
+    opcode = static_cast<uint16_t>(e.data[1]) |
+             (static_cast<uint16_t>(e.data[2]) << 8);
+  }
+  DBG_PRINTF("[ESPNOW][ACK][doSendAck] op=0x%04X len=%u attempt=%u status=%u\n",
+             (unsigned)opcode, (unsigned)e.len, (unsigned)e.attempts,
+             (unsigned)(e.status ? 1 : 0));
   TxAckEvent copy = e;
   if (xQueueSend(sendQ, &copy, 0) != pdPASS) {
     DBG_PRINTLN("[ESPNOW][ACK] sendQ full (drop)");
@@ -92,20 +118,30 @@ bool EspNowManager::sendAckNow_(const TxAckEvent& e) {
     return false;
   }
 
-  const size_t maxCopy = sizeof(e.msg) - 1;
-  const size_t n = strnlen(e.msg, maxCopy);
-  const size_t len = n + 1; // include NUL to match master expectations
+  if (e.len == 0 || e.len > ESPNOW_MAX_DATA_LEN) {
+    DBG_PRINTLN("[ESPNOW][sendAckNow_] invalid length");
+    return false;
+  }
+  uint16_t opcode = 0;
+  if (e.len >= 3) {
+    opcode = static_cast<uint16_t>(e.data[1]) |
+             (static_cast<uint16_t>(e.data[2]) << 8);
+  }
 
-  DBG_PRINTLN(String("[ESPNOW][ACK][send] '") + e.msg + "' -> master");
-  DBG_PRINTLN(String("[ESPNOW][TX] ") + extractCmdCode_(String(e.msg)));
+  DBG_PRINTF("[ESPNOW][ACK][send] op=0x%04X len=%u -> master\n",
+             (unsigned)opcode, (unsigned)e.len);
 
-  esp_err_t r = sendData(peerMac, reinterpret_cast<const uint8_t*>(e.msg), len);
+  esp_err_t r = sendData(peerMac, e.data, e.len);
   if (r == ESP_OK) {
     taskENTER_CRITICAL(&sendMux_);
     inFlight_    = e;
     hasInFlight_ = true;
     taskEXIT_CRITICAL(&sendMux_);
-    if (LOGG) LOGG->logAckSent(String(e.msg));
+    if (LOGG) {
+      String logLine = String("op=0x") + String(opcode, HEX) +
+                       " len=" + String(e.len);
+      LOGG->logAckSent(logLine);
+    }
     DBG_PRINTLN("[ESPNOW][ACK] In-flight set.");
     return true;
   }
@@ -136,8 +172,45 @@ void EspNowManager::trySendNext_() {
 
   TxAckEvent next{};
   if (xQueueReceive(sendQ, &next, 0) == pdPASS) {
-    DBG_PRINTLN(String("[ESPNOW][TX] Dequeued for send: '") + next.msg +
-                  "' attempt=" + String(next.attempts));
+    uint16_t opcode = 0;
+    if (next.len >= 3) {
+      opcode = static_cast<uint16_t>(next.data[1]) |
+               (static_cast<uint16_t>(next.data[2]) << 8);
+    }
+    DBG_PRINTF("[ESPNOW][TX] Dequeued for send: op=0x%04X attempt=%u\n",
+               (unsigned)opcode, (unsigned)next.attempts);
     (void)sendAckNow_(next);
   }
+}
+
+// =============================================================
+//  Response builder
+// =============================================================
+bool EspNowManager::buildResponse_(uint16_t opcode,
+                                   const uint8_t* payload,
+                                   size_t payloadLen,
+                                   uint8_t* out,
+                                   size_t* outLen) {
+  if (!out || !outLen) {
+    return false;
+  }
+  if (payloadLen > 0xFF) {
+    return false;
+  }
+  if (payloadLen && !payload) {
+    return false;
+  }
+  const size_t total = 4 + payloadLen;
+  if (total > ESPNOW_MAX_DATA_LEN) {
+    return false;
+  }
+  out[0] = NOW_FRAME_RESP;
+  out[1] = static_cast<uint8_t>(opcode & 0xFF);
+  out[2] = static_cast<uint8_t>((opcode >> 8) & 0xFF);
+  out[3] = static_cast<uint8_t>(payloadLen);
+  if (payloadLen && payload) {
+    memcpy(out + 4, payload, payloadLen);
+  }
+  *outLen = total;
+  return true;
 }

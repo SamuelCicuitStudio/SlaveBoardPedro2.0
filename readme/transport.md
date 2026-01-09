@@ -134,13 +134,22 @@ Capability bits: bit0=OpenSwitch, bit1=Shock, bit2=Reed, bit3=Fingerprint.
 - DeviceHandler covers all Device opcodes listed above, including pairing, config mode, arm/disarm, reboot, caps set/query, cancel timers, role, NVS writes, heartbeat/ping/state/caps queries.
 
 ## ESP-NOW CommandAPI Bridge (two-way)
-- Master keeps speaking `CMD_*` / `ACK_*` per `CommandAPI.h`; ESP-NOW radio is unchanged.
+- Master speaks `CommandMessage` frames (`frameType=NOW_FRAME_CMD`) with hex opcodes
+  from `src/api/CommandAPI.hpp`.
 - RX path:
-  - Parsed CMDs → transport Requests: config mode, arm/disarm, reboot/reset, caps set/query, set role, cancel timers, pairing init/status, motor lock/unlock/diag, shock enable/disable, all FP commands (verify on/off, enroll/delete/clear, query DB, next ID, adopt/release).
-  - Edge-handled (immediate ACK on ESP-NOW, no transport mutation): `CMD_STATE_QUERY`→`ACK_STATE`, `CMD_HEARTBEAT_REQ`/`CMD_PING`→`ACK_HEARTBEAT/ACK_PING`, `CMD_CONFIG_STATUS`→`ACK_CONFIGURED/ACK_NOT_CONFIGURED`, `CMD_BATTERY_LEVEL`→`ACK_BATTERY_PREFIX:<pct>`.
-  - CMD parsing remains enabled (`legacyCmdsEnabled=true`); no Device direct calls are made—state-changing ops are injected into transport.
+  - Parsed CommandMessage -> transport Requests: config mode, arm/disarm, reboot/reset,
+    caps set/query, set role, cancel timers, pairing init/status, motor lock/unlock/diag,
+    shock enable/disable, all FP commands (verify on/off, enroll/delete/clear, query DB,
+    next ID, adopt/release).
+  - Edge-handled (immediate ResponseMessage on ESP-NOW, no transport mutation):
+    `CMD_STATE_QUERY` -> `ACK_STATE` (payload `AckStatePayload`),
+    `CMD_HEARTBEAT_REQ` -> `ACK_HEARTBEAT`,
+    `CMD_CONFIG_STATUS` -> `ACK_CONFIGURED`/`ACK_NOT_CONFIGURED`,
+    `CMD_BATTERY_LEVEL` -> `EVT_BATTERY_PREFIX` (payload pct).
 - TX path:
-  - Any transport message with `destId=1` is intercepted and translated to the matching `ACK_*` string, then sent over ESP-NOW: Device state/heartbeat/caps/config/pairing, UnlockRequest/AlarmRequest/DriverFar/LockCanceled/AlarmOnly/CriticalPower/Breach, MotorDone → `ACK_LOCKED/ACK_UNLOCKED`, Shock Trigger → `ACK_MTRTTRG`, all FP events/responses → `ACK_FP_*`/`ACK_FINGERPRINT_*`.
+  - Any transport message with `destId=1` is translated to a `ResponseMessage`
+    with opcode set to the matching `ACK_*` or `EVT_*` value, and the payload encoded
+    per `CommandAPI.hpp` (e.g., `AckStatePayload`, `AckCapsPayload`, `EvtReedPayload`).
   - If not translatable, the raw transport frame falls back to ESP-NOW send.
 - Both directions still traverse transport queues (rxQueue_/txHigh_/txLow_) to keep TX/RX independent.
 

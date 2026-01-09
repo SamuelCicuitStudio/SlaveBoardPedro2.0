@@ -55,20 +55,23 @@ the device does**; for protocol details see the readme folder at the end.
 
 - ESPNOW stays in **pairing mode**.
 - Only **pairing traffic** is accepted/produced:
-  - `PAIR_INIT:code=PAIR_INIT:chan=<n>` and `CMD_CONFIG_STATUS`.
+  - Binary `PairInit` (`frameType=NOW_FRAME_PAIR_INIT`, payload: `caps(u8)` + `seed(u32, big-endian)`)
+  - `CMD_CONFIG_STATUS` as a binary `CommandMessage` frame.
 - All other commands are ignored.
 - **No normal transport events** are sent.
 - **Lock role only**: open button can locally unlock **only** when battery is Good.
 
 ### Pairing flow
 
-1. Master sends `PAIR_INIT` (plaintext) with channel.
-2. Slave stores master MAC and channel, sets:
-   - `DEVICE_CONFIGURED=true`
-   - `ARMED_STATE=false`
-   - `MOTION_TRIG_ALARM=false`
-3. Slave sends `ACK_PAIR_INIT`, then switches to secure ESPNOW and sends:
-   - `ACK_CONFIGURED` + one battery report (`EVT_BATTERY_PREFIX:<pct>`).
+1. Master sends `PairInit` (unencrypted) with `caps` + `seed`.
+2. Slave adds the master as a temporary **unencrypted** peer and sends `ACK_PAIR_INIT`.
+3. After the ACK is **delivered OK**, wait **300 ms**, remove the unencrypted peer,
+   derive the LMK from master MAC + `seed` + `"LMK-V1"`, store pairing data, and
+   re-add the master as an encrypted peer (no ESP-NOW restart).
+4. Slave sends `ACK_CONFIGURED` and a battery report (`EVT_BATTERY_PREFIX` payload).
+
+Note: the PMK is set at ESPNOW init from the shared `#define` even during
+unencrypted pairing, so the stack never relies on a default PMK.
 
 ### Config Mode (paired-only, RAM-latched)
 
@@ -137,12 +140,12 @@ Battery policy runs in `Device::enforcePowerPolicy_()` and uses:
 Two layers operate together:
 
 1. **Binary transport** (`src/radio/Transport.*`) for module/opcode messages.
-2. **Text CommandAPI** (`src/api/CommandAPI.hpp`) for compatibility with the master.
+2. **Binary CommandAPI** (`src/api/CommandAPI.hpp`) for master/slave ESP-NOW frames.
 
 The ESPNOW manager bridges both ways:
 
-- Text `CMD_*` -> injected transport requests.
-- Transport responses/events -> `ACK_*` / `EVT_*` strings.
+- `CommandMessage` frames (`NOW_FRAME_CMD`) -> injected transport requests.
+- Transport responses/events -> `ResponseMessage` frames (`NOW_FRAME_RESP`) with `ACK_*` / `EVT_*` opcode.
 
 See `readme/transport.md` for opcode tables and state struct format.
 

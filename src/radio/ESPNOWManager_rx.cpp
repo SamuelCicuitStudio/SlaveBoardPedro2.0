@@ -5,6 +5,28 @@
 #include <Utils.hpp>
 #include <string.h>
 
+namespace {
+bool parseCommandFrame_(const uint8_t* data, size_t len, uint16_t& opcodeOut,
+                        const uint8_t*& payloadOut, uint8_t& payloadLenOut) {
+  if (!data || len < 4) {
+    return false;
+  }
+  if (data[0] != NOW_FRAME_CMD) {
+    return false;
+  }
+  const uint16_t opcode = static_cast<uint16_t>(data[1]) |
+                          (static_cast<uint16_t>(data[2]) << 8);
+  const uint8_t payloadLen = data[3];
+  if (len < static_cast<size_t>(4 + payloadLen)) {
+    return false;
+  }
+  opcodeOut = opcode;
+  payloadLenOut = payloadLen;
+  payloadOut = data + 4;
+  return true;
+}
+} // namespace
+
 // =============================================================
 //  Callbacks
 // =============================================================
@@ -43,24 +65,19 @@ void EspNowManager::processRx(const RxEvent& e) {
                e.len, e.mac[0], e.mac[1], e.mac[2], e.mac[3], e.mac[4], e.mac[5]);
   debugDumpPacket_("RX", e.buf, static_cast<size_t>(e.len));
 
-  // Feed raw frame into transport layer (binary protocol) from worker context.
-  if (transport && isConfigured_()) {
-    transport->onRadioReceive(e.buf, static_cast<size_t>(e.len));
-  }
-
   // Keep the device awake on traffic
   if (Slp) Slp->reset();
 
-  String msg = makeSafeString_(reinterpret_cast<const char*>(e.buf),
-                               static_cast<size_t>(e.len));
-  msg.trim();
-
   if (!isConfigured_()) {
     DBG_PRINTLN("[ESPNOW][processRx] Unconfigured -> pairing mode");
-    if (handlePairInit_(e.mac, msg)) {
+    if (handlePairInit_(e.mac, e.buf, static_cast<size_t>(e.len))) {
       return;
     }
-    if (msg.equals(CMD_CONFIG_STATUS)) {
+    uint16_t opcode = 0;
+    const uint8_t* payload = nullptr;
+    uint8_t payloadLen = 0;
+    if (parseCommandFrame_(e.buf, static_cast<size_t>(e.len), opcode, payload, payloadLen) &&
+        opcode == CMD_CONFIG_STATUS) {
       SendAck(ACK_NOT_CONFIGURED, false);
       return;
     }
@@ -73,32 +90,31 @@ void EspNowManager::processRx(const RxEvent& e) {
     return;
   }
 
-  if (msg.isEmpty()) {
+  if (e.len < 1) {
     return;
   }
 
-  DBG_PRINTLN(String("[ESPNOW][processRx] CMD='") + msg + "'");
-  DBG_PRINTLN(String("[ESPNOW][RX] ") + extractCmdCode_(msg));
+  const uint8_t frameType = e.buf[0];
+  if (frameType != NOW_FRAME_CMD) {
+    DBG_PRINTF("[ESPNOW][processRx] Non-command frame type=0x%02X ignored\n",
+               (unsigned)frameType);
+    return;
+  }
+
+  uint16_t opcode = 0;
+  const uint8_t* payload = nullptr;
+  uint8_t payloadLen = 0;
+  if (!parseCommandFrame_(e.buf, static_cast<size_t>(e.len), opcode, payload, payloadLen)) {
+    DBG_PRINTLN("[ESPNOW][processRx] Invalid command frame");
+    return;
+  }
+
+  DBG_PRINTF("[ESPNOW][processRx] CMD opcode=0x%04X payloadLen=%u\n",
+             (unsigned)opcode, (unsigned)payloadLen);
 
   // Presence seen on any valid packet
   lastHbMs_ = millis();
 
   // Hand off to command handler (CommandAPI -> transport bridge)
-  ProcessComand(msg);
-}
-
-// =============================================================
-//  Safe String Helper
-// =============================================================
-String EspNowManager::makeSafeString_(const char* src, size_t n) {
-  // copy n bytes, force-terminate, then build String
-  char buf[128];
-  size_t m = (n < sizeof(buf) - 1) ? n : sizeof(buf) - 1;
-  memcpy(buf, src, m);
-  buf[m] = '\0';
-  // Debug small hint when truncation might occur
-  if (n >= sizeof(buf)) {
-    DBG_PRINTF("[ESPNOW][makeSafeString_] trunc %u->%u\n", (unsigned)n, (unsigned)m);
-  }
-  return String(buf);
+  ProcessComand(opcode, payload, payloadLen);
 }

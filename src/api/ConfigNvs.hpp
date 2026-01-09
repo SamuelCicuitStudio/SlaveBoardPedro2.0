@@ -21,20 +21,20 @@
 #define DEVICE_NAME             "DEVNM"   // string : Human-readable name
 #define DEVICE_ID               "DEVID"   // string : Short ID / logical slot
 #define MASTER_ESPNOW_ID        "MSTNW"   // string : MAC of paired master
-#define AUTH_TOKEN              "AUTKN"   // string : shared secret
 #define DEVICE_CONFIGURED       "CFGED"   // bool   : true once paired / fully set
 #define RESET_FLAG              "RSTFL"   // bool   : request factory reset
+#define MASTER_LMK_KEY          "MLMK"   // string : master link key (hex)
 
 #define DEVICE_NAME_DEFAULT         "LOCK"
 #define DEVICE_ID_DEFAULT           "LCK_"
 #define MASTER_ESPNOW_ID_DEFAULT    "00:00:00:00:00:00"
-#define AUTH_TOKEN_DEFAULT          "12345678"
 #define DEVICE_CONFIGURED_DEFAULT   false
 #define RESET_FLAG_DEFAULT          true
+#define MASTER_LMK_DEFAULT          ""
 
 // Pairing bootstrap channel (stored in NVS)
 #define MASTER_CHANNEL_KEY          "MCH"
-#define MASTER_CHANNEL_DEFAULT      1
+#define MASTER_CHANNEL_DEFAULT      0
 
 // ---------------------------
 // Runtime lock / security state
@@ -94,9 +94,9 @@
   NVS_KEYLEN_OK(DEVICE_NAME);
   NVS_KEYLEN_OK(DEVICE_ID);
   NVS_KEYLEN_OK(MASTER_ESPNOW_ID);
-  NVS_KEYLEN_OK(AUTH_TOKEN);
   NVS_KEYLEN_OK(DEVICE_CONFIGURED);
   NVS_KEYLEN_OK(RESET_FLAG);
+  NVS_KEYLEN_OK(MASTER_LMK_KEY);
   NVS_KEYLEN_OK(MASTER_CHANNEL_KEY);
 
   NVS_KEYLEN_OK(LOCK_STATE);

@@ -146,8 +146,8 @@ private:
   bool isMotorMoving_() const;
   void printMACIfUserButton_() const;
 
-  void sendAck_(const String& msg, bool ok=false);
-  void sendAck_(const char* msg, bool ok=false) { sendAck_(String(msg), ok); }
+  void sendAck_(uint16_t opcode, bool ok=false);
+  void sendAck_(uint16_t opcode, const uint8_t* payload, size_t payloadLen, bool ok=false);
   void sendMotionTrig_();
   void requestUnlock_();
   void requestAlarm_();

@@ -10,6 +10,7 @@
 #define ESPNOW_MANAGER_H
 
 #include <Arduino.h>
+#include <CommandAPI.hpp>
 #include <Config.hpp>
 #include <ConfigNvs.hpp>
 #include <Transport.hpp>
@@ -38,7 +39,7 @@ class TransportManager;
 #define ESPNOW_RX_QUEUE_SIZE         32
 #define ESPNOW_TX_QUEUE_SIZE         32
 #undef  ESPNOW_WORKER_STACK
-#define ESPNOW_WORKER_STACK          6144      // ↑ more headroom for String ops
+#define ESPNOW_WORKER_STACK          6144      // extra headroom for worker tasks
 #define ESPNOW_WORKER_PRIO           3
 #define ESPNOW_WORKER_CORE           APP_CPU_NUM
 
@@ -71,23 +72,6 @@ class TransportManager;
 //                                 DATA STRUCTS
 // ============================================================================
 
-// ---------- App-Level Messages ----------
-struct InitMessage {
-    char token[33];
-};
-
-struct CommandMessage {
-    String   command;   // App-level only (not on wire)
-    char     token[33];
-    uint64_t UnixTime;
-};
-
-struct Acknowledgment {
-    bool     success;
-    String   message;   // App-level only (not on wire)
-    String   SlaveMac;
-};
-
 // ============================================================================
 //                                 CLASS DEF
 // ============================================================================
@@ -119,16 +103,17 @@ public:
     void storeMacAddress(const uint8_t* mac_addr);
     esp_err_t getMacAddress(uint8_t* mac_addr);
     bool compareMacAddress(const uint8_t* mac_addr);
-    void ProcessComand(String Msg);
+    void ProcessComand(uint16_t opcode, const uint8_t* payload, size_t payloadLen);
 
     // ---------- TX Helpers ----------
-    void SendAck(const String& Msg, bool Status);
+    void SendAck(uint16_t opcode, bool Status);
+    void SendAck(uint16_t opcode, const uint8_t* payload, size_t payloadLen, bool Status);
     void RequestOff();
     void RequestUnlock();
     void SendMotionTrigg();
     void RequesAlarm();
 
-    // Bridge transport Responses/Events to CommandAPI ACK strings.
+    // Bridge transport Responses/Events to CommandAPI response frames.
     bool handleTransportTx(const transport::TransportMessage& msg);
 
     // ---------- Utilities ----------
@@ -195,8 +180,9 @@ private:
     };
 
     struct TxAckEvent {
+        uint8_t  data[ESPNOW_MAX_DATA_LEN];
+        uint16_t len;
         bool     status;
-        char     msg[128];
         uint8_t  attempts;
     };
 
@@ -241,10 +227,9 @@ private:
     // Motor completion -> ACK only (no STATE)
     static void MotorAckTask(void* parameter);
 
-    // Safe string builder
-    static String makeSafeString_(const char* src, size_t n);
-    static String extractCmdCode_(const String& msg);
     static void   debugDumpPacket_(const char* tag, const uint8_t* data, size_t len);
+    static bool   buildResponse_(uint16_t opcode, const uint8_t* payload, size_t payloadLen,
+                                 uint8_t* out, size_t* outLen);
 
     // Presence & Journal Helpers
     bool        pingMaster(uint8_t tries);
@@ -265,10 +250,19 @@ private:
     uint32_t    pendingPairInitMs_ = 0;
     uint8_t     pendingPairInitMac_[6] = {0};
     uint8_t     pendingPairInitChannel_ = MASTER_CHANNEL_DEFAULT;
+    uint8_t     pendingPairInitCaps_ = 0;
+    uint32_t    pendingPairInitSeed_ = 0;
+    bool        pendingPairInitAckInFlight_ = false;
+    bool        pendingPairInitAckDone_ = false;
+    bool        pendingPairInitAckOk_ = false;
+    uint32_t    pendingPairInitAckDoneMs_ = 0;
 
     bool        setChannel_(uint8_t channel);
     bool        setupSecurePeer_(const uint8_t masterMac[6], uint8_t channel);
-    bool        handlePairInit_(const uint8_t masterMac[6], const String& msg);
+    bool        setPmk_();
+    bool        handlePairInit_(const uint8_t masterMac[6], const uint8_t* data, size_t len);
+    void        finalizePairInit_();
+    void        clearPendingPairInit_(const char* reason, bool removePeer);
     void        pollPairing_();
 };
 

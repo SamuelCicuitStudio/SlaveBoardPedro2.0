@@ -188,7 +188,7 @@ void NVS::initializeVariables() {
     PutString(DEVICE_NAME,          DEVICE_NAME_DEFAULT);
     PutString(DEVICE_ID,            devId);
     PutString(MASTER_ESPNOW_ID,     MASTER_ESPNOW_ID_DEFAULT);
-    PutString(AUTH_TOKEN,           AUTH_TOKEN_DEFAULT);
+    PutString(MASTER_LMK_KEY,       MASTER_LMK_DEFAULT);
     PutBool  (DEVICE_CONFIGURED,    DEVICE_CONFIGURED_DEFAULT);
 
     //

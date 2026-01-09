@@ -20,14 +20,45 @@ slave ESP-NOW layer. The slave should reuse the same `CommandAPI.hpp` contract.
   `MasterFixLast/readme/espnow_device_requirements.md`.
 
 ## Command vocabulary and wire format
-- All ESP-NOW frames are ASCII strings defined in `CommandAPI.hpp`.
-- Command or event format: `"0xNN"` or `"0xNN:<payload>"`.
-- `ESPNowManager` parses only the first 4 chars as hex code (`0xNN`) and
-  optionally a payload after the first `:` in the buffer.
-- Master RX parse buffer is 64 bytes; keep responses and payloads short
-  (<= 63 bytes total including `0xNN` and payload).
-- `NOW_CMD_MAX_LEN` default is 16 for outgoing command strings. Slave should
-  keep command echoes and payload formats compact.
+- All ESP-NOW frames are binary and use hex opcodes defined in `src/api/CommandAPI.hpp`.
+- Common header: `frameType (u8) + opcode (u16, little-endian) + payloadLen (u8)`.
+- `frameType` differentiates Command vs Response vs PairInit.
+- `ResponseMessage` carries both ACKs and Events; opcode values differentiate them.
+- Pair-init is unencrypted and uses the fixed `PairInit` struct (caps + seed_be).
+
+### Wire structures (ESP-NOW)
+Canonical definitions live in `src/api/CommandAPI.hpp` (slave side).
+```
+enum NowFrameType : uint8_t {
+  NOW_FRAME_CMD       = 0x01,
+  NOW_FRAME_RESP      = 0x02,
+  NOW_FRAME_PAIR_INIT = 0x03
+};
+
+#pragma pack(push, 1)
+struct CommandMessage {
+  uint8_t  frameType;  // NOW_FRAME_CMD
+  uint16_t opcode;     // little-endian on wire
+  uint8_t  payloadLen;
+  uint8_t  payload[1];
+};
+
+struct ResponseMessage {
+  uint8_t  frameType;  // NOW_FRAME_RESP
+  uint16_t opcode;     // little-endian on wire (ACK vs EVT by opcode value)
+  uint8_t  payloadLen;
+  uint8_t  payload[1];
+};
+
+struct AckStatePayload { /* see CommandAPI.hpp */ };
+
+struct PairInit {
+  uint8_t  frameType;  // NOW_FRAME_PAIR_INIT
+  uint8_t  caps;       // bit0=Open, bit1=Shock, bit2=Reed, bit3=Fingerprint
+  uint32_t seed_be;    // big-endian on wire
+};
+#pragma pack(pop)
+```
 
 ## File map and responsibilities (master)
 - `NowConfig.hpp`: constants (queue lengths, timeouts) and the `Slave` state
@@ -38,10 +69,10 @@ slave ESP-NOW layer. The slave should reuse the same `CommandAPI.hpp` contract.
   near/far, door safety timers, pending commands, and capability ownership.
 - `NowPipeline.*`: ESP-NOW transport (init, peers, send/recv).
 - `NowTransport.*`: request queue + worker thread; translates requests to
-  command strings and enforces master-local endpoint rules.
+  command frames and enforces master-local endpoint rules.
 - `NowManager.*` (ESPNowManager): glue between ESP-NOW callbacks, pipeline,
   and the core/transport.
-- `SecurityKeys.hpp`: deterministic PMK/LMK generation (SHA256-based).
+- `SecurityKeys.hpp`: hardcoded PMK + seed-based LMK derivation.
 - `ConfigNvs.hpp`: NVS key names for master channel, slave slots, owners, etc.
 
 ## Data model (NowConfig + NowProtocol)
@@ -91,7 +122,7 @@ RAM-only per-slot fields:
   1) `NowPipeline::onRecv_` calls `NowCore::HandleRx`.
   2) `HandleRx` updates liveness for known MACs, then enqueues `RxMessage`.
   3) `rxWorkerLoop_` dequeues and calls `rxWorkerHandler_`.
-  4) `ESPNowManager::onDataReceivedWorker_` parses the string, updates Core,
+  4) `ESPNowManager::onDataReceivedWorker_` parses opcode/payload, updates Core,
      and forwards to Transport.
 - Pairing uses `StartRxOnly()` (no ping task).
 
@@ -100,10 +131,10 @@ RAM-only per-slot fields:
   - If channel is 0, read `MASTER_CHANNEL_KEY` from NVS.
   - `esp_wifi_set_channel(channel)`.
   - `esp_now_init()`; registers send/recv callbacks.
-  - If secure, sets PMK from `MASTER_PMK_KEY` or generates new.
+  - If secure, sets PMK from the hardcoded define (master + slave match).
 - `AddPeersFromCore()`:
   - Converts `macAddress` string to bytes.
-  - Generates LMK if missing, stores in NVS, converts hex to bytes.
+  - Ensures LMK is present (derived from the stored seed), stores in NVS, converts hex to bytes.
   - Adds peer with `encrypt=true` when secure.
 - `SendToMac()`:
   - If target is a known slave, records TX stats in Core.
@@ -112,7 +143,7 @@ RAM-only per-slot fields:
 
 ## Transport layer (NowTransport)
 - Owns request queue, event queue, and a worker task.
-- `Enqueue()` pushes requests for the worker to serialize into commands.
+- `Enqueue()` pushes requests for the worker to serialize into command frames.
 - `processRequest_()` handles all request types:
   - Sends commands, handles pairing, removes peers, resets core, etc.
   - Builds snapshot/liveness by copying Core state into local cache.
@@ -129,23 +160,17 @@ RAM-only per-slot fields:
 - Target slot is chosen by UI/DeviceManager; master-local slot cannot be paired.
 
 ### Steps (from `NowTransport::sendPairInit_`)
-1) Start unencrypted ESP-NOW on the configured channel.
-2) Add the target MAC as a temporary unencrypted peer.
+1) ESP-NOW is already running; PMK is set from the hardcoded define.
+2) Add the target MAC as a temporary **unencrypted** peer (encrypt=false).
 3) Start RX-only worker to listen for `ACK_PAIR_INIT`.
-4) **Deinit** ESP-NOW completely (stop callbacks, deinit stack).
-5) **Clear all peers**.
-6) Start ESP-NOW in **unencrypted** mode (no PMK/LMK).
-7) **Add only the target peer** (temporary list = 1).
-8) Send the unencrypted init string:
-   `PAIR_INIT:v1:code=PAIR_INIT:chan=<MASTER_CHANNEL>:caps=O{0|1}S{0|1}R{0|1}F{0|1}`
-9) Wait for `ACK_PAIR_INIT` from the same MAC (timeout
+4) Send the unencrypted init payload (`PairInit`: caps + seed_be).
+5) Wait for `ACK_PAIR_INIT` from the same MAC (timeout
    `NOW_REMOVE_ACK_TIMEOUT_MS`, default 15000 ms).
-10) **Deinit** ESP-NOW again (pairing window ends).
-11) Wait `NOW_PAIR_INIT_SECURE_DELAY_MS` (default 3000 ms).
-12) Restart secure ESP-NOW, set PMK, add **all peers** from NVS (with LMK),
-    start traffic.
-13) Wait **5 seconds** before sending pings/heartbeats/other background traffic
-    to allow the slave to finish secure rejoin.
+6) Remove the temporary unencrypted peer.
+7) Derive LMK from master MAC + seed + `"LMK-V1"` and add the peer encrypted.
+8) Start traffic (if not already running).
+9) Wait **5 seconds** before sending pings/heartbeats/other background traffic
+   to allow the slave to finish secure rejoin.
 
 ### Slot configuration (after init ACK)
 - Store MAC + LMK in NVS.
@@ -272,11 +297,13 @@ slot. The slave layer never sees master-local commands; this is a master-side
 guard.
 
 ## Security and keys
-`SecurityKeys.hpp` and `readme/security.md` define deterministic keys:
-- PMK = SHA256(AP_MAC + "PMK-V1") first 16 bytes (hex-encoded).
-- LMK = SHA256(AP_MAC + SLAVE_MAC + "LMK-V1") first 16 bytes (hex-encoded).
+`SecurityKeys.hpp` and `readme/security.md` define:
+- PMK is hardcoded as a `#define` on both master and slave.
+- The slave always applies the PMK at ESPNOW init (even for unencrypted pairing),
+  so it never relies on the default PMK.
+- LMK = SHA256(AP_MAC + SEED + "LMK-V1") first 16 bytes (hex-encoded).
 - Keys are stored as 32 uppercase hex chars.
-- No keys are sent over the air; only the pairing init message is plaintext.
+- No LMK is sent over the air; the seed is sent in the pairing init message.
 
 ## DeviceManager integration (master)
 - DeviceManager is the only owner that starts/stops ESP-NOW and runs the
@@ -289,17 +316,21 @@ guard.
 The slave ESP-NOW layer must implement the following to match the master:
 
 ### Pairing and channel
-- Listen for the unencrypted init string:
-  `PAIR_INIT:v1:code=PAIR_INIT:chan=<N>:caps=O{0|1}S{0|1}R{0|1}F{0|1}`.
+- Listen for the unencrypted init payload:
+  `caps (u8) + seed (u32, big-endian)`.
 - On receipt (unicast from master):
   1) Add the master MAC as a **temporary unencrypted peer** (no PMK/LMK).
   2) Send `ACK_PAIR_INIT (0xA2)` immediately to that MAC.
-  3) Remove the temporary unencrypted master peer.
-  4) **Restart ESP-NOW in secure mode**, set PMK, add the master peer with LMK.
-- Store master MAC and channel `<N>` in NVS before secure rejoin.
+  3) After the ACK is **delivered OK**, wait **300 ms**, then remove the temporary
+     unencrypted peer.
+  4) Derive the LMK from master MAC + seed + `"LMK-V1"`, then add the master peer
+     in encrypted mode (no ESP-NOW restart).
+  5) Apply the caps from `PairInit` only after `ACK_PAIR_INIT` is confirmed OK.
+- Store master MAC and current channel in NVS before secure rejoin.
 
 ### Secure keys (must match master)
-- Derive PMK and LMK exactly as in `SecurityKeys.hpp` using AP MACs.
+- PMK is hardcoded as a `#define` on both master and slave.
+- Derive LMK from master MAC + seed + `"LMK-V1"` as in `SecurityKeys.hpp`.
 - Use uppercase hex strings if storing.
 
 ### Required command responses (ACKs)
@@ -319,20 +350,20 @@ At minimum, the slave must respond with:
 
 ### Required events and payload formats
 These directly affect master behavior:
-- `EVT_REED (0xB9:<0|1>)` door open/close.
-- `EVT_MTRTTRG (0xB4)` shock trigger.
-- `EVT_BATTERY_PREFIX (0xB1:<pct>)` battery report (0..100).
-- `EVT_LWBT (0xB2)` low battery.
-- `EVT_HGBT (0xB3)` battery back to good.
-- `EVT_CRITICAL (0x98)` critical battery.
-- `EVT_GENERIC (0x9E)` open button or unlock request.
-- `EVT_BREACH (0x97)` breach/tamper.
-- `EVT_FP_MATCH (0xC0)` and `EVT_FP_FAIL (0xC1)` when fingerprint is used.
+- `EVT_REED (0xB9)` payload: `EvtReedPayload { open }`.
+- `EVT_MTRTTRG (0xB4)` no payload.
+- `EVT_BATTERY_PREFIX (0xB1)` payload: `EvtBatteryPayload { pct }`.
+- `EVT_LWBT (0xB2)` no payload.
+- `EVT_HGBT (0xB3)` no payload.
+- `EVT_CRITICAL (0x98)` no payload.
+- `EVT_GENERIC (0x9E)` payload: `EvtGenericPayload { len, text[] }`.
+- `EVT_BREACH (0x97)` no payload.
+- `EVT_FP_MATCH (0xC0)` payload: `EvtFpMatchPayload { id_le, conf }`.
+- `EVT_FP_FAIL (0xC1)` no payload.
 
 ### Capability report format
-`ACK_CAPS` payload must be:
-`"O{0|1}S{0|1}R{0|1}F{0|1}"`
-Example: `0xAE:O1S1R1F0`.
+`ACK_CAPS (0xAE)` payload is `AckCapsPayload { caps }` where:
+- bit0=Open, bit1=Shock, bit2=Reed, bit3=Fingerprint.
 
 ### Error responses
 When a command is not allowed, the slave should send one of:
@@ -348,8 +379,8 @@ These are treated by the master as terminal responses for pending commands.
 - Send `EVT_LWBT`, `EVT_HGBT`, and `EVT_CRITICAL` on transitions.
 
 ### Timing and payload limits
-- Keep payloads short (master RX buffer is 64 bytes).
-- Use only ASCII in payloads.
+- Total frame size must fit ESP-NOW payload limits (<= 250 bytes).
+- `payloadLen` must match the actual payload size.
 
 ## Notes for slave implementation planning
 - The master relies on liveness, battery, and capability ownership for

@@ -7,15 +7,19 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 - Alarm role (`IS_SLAVE_ALARM=true`): motor/open/fingerprint are hard-disabled; shock and reed are forced enabled. Motor/FP objects are not constructed, motor commands are stubbed (UNSUPPORTED), and motor-style events are suppressed.
 
 ## Pairing and transport
-- Unpaired (`DEVICE_CONFIGURED=false`): no transport events; pairing INIT handled by
-  ESP-NOW and must include channel + capability flags; ACK_PAIR_INIT is required
-  before secure pairing proceeds (no capability ACK). Critical battery sleeps
-  immediately, low disables FP locally. On `PAIR_INIT` unicast, the slave adds
-  the master as a temporary unencrypted peer, sends `ACK_PAIR_INIT`, removes
-  that peer, then restarts ESP-NOW in secure mode with PMK/LMK and the master MAC.
-  The `caps=...` flags in `PAIR_INIT` are applied immediately as the slave's
-  hardware capability set.
-- Paired: transport manager wired to ESP-NOW; handlers registered (Device, Shock, Motor stub if alarm role, Fingerprint if present).
+- Unpaired (`DEVICE_CONFIGURED=false`): no transport events; pairing handled by ESP-NOW.
+  Pair-init is a binary `PairInit` frame (`frameType=NOW_FRAME_PAIR_INIT`) carrying
+  **caps (u8) + seed (u32, big-endian)**. The slave must reply with a
+  `ResponseMessage` using opcode `ACK_PAIR_INIT` before secure pairing proceeds
+  (no capability ACK). On PairInit unicast, the slave adds the master as a temporary
+  unencrypted peer and sends `ACK_PAIR_INIT`. After the ACK is **delivered OK**, it
+  waits **300 ms**, removes that peer, then derives the LMK from master MAC + seed +
+  "LMK-V1" and re-adds the master in encrypted mode (no ESP-NOW restart). The caps
+  flags in `PairInit` are applied **after** `ACK_PAIR_INIT` is confirmed OK.
+- PMK is set on ESPNOW init from the shared `#define` for both encrypted and
+  unencrypted phases (no reliance on default PMK).
+- Paired: transport manager wired to ESP-NOW; handlers registered (Device, Shock,
+  Motor stub if alarm role, Fingerprint if present).
 
 ## Command handling (via transport)
 - Device: config mode, arm/disarm, reboot, caps set/query, pairing init/status, state/heartbeat/ping, cancel timers, set role, limited NVS bool writes (armed bit, HAS_* presence flags, and `LOCK_EMAG_KEY` for screw vs electromagnet mode).
@@ -36,8 +40,12 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 - `enforcePowerPolicy_()` drives low/critical overlays and sleep. SleepTimer serviced each loop. Critical/unpaired uses deep sleep; paired uses sleep timer after emitting required events.
 
 ## ESP-NOW / CommandAPI bridge
-- CMD_* parsed by ESP-NOW, mapped to transport Requests; immediate ACKs for state/heartbeat/ping/config status/battery.
-- Transport Responses/Events to destId=1 are translated to `ACK_*` strings and sent over ESP-NOW; otherwise raw transport frames are sent.
+- `CommandMessage` frames (frameType `NOW_FRAME_CMD`) are parsed by ESP-NOW and
+  mapped to transport Requests; immediate Responses are emitted for state/heartbeat/
+  ping/config status/battery as `ResponseMessage` with the corresponding `ACK_*` opcode.
+- Transport Responses/Events to destId=1 are translated to `ResponseMessage` frames
+  with `opcode` set to the appropriate `ACK_*` or `EVT_*` value and sent over ESP-NOW;
+  otherwise raw transport frames are sent.
 
 ## Divergences between roles
 - Alarm role: no motor/open/FP; no MotorDone or OpenRequest events; DriverFar suppressed. Shock/reed/breach and power overlays still reported.

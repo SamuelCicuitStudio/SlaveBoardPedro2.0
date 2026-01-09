@@ -33,13 +33,17 @@ This document teaches an LLM how to **reason about and describe** the device’s
 
 - **Paired**: normal events/commands flow on transport.
 - **Unpaired**: ESPNOW remains in **pairing mode** and **does** exchange pairing traffic
-  (PAIR_INIT/ACK, config status). Normal command/event traffic is suppressed.
-  Pair init includes channel + capability flags; the slave must ACK `PAIR_INIT`
-  before secure pairing/config traffic proceeds. No capability ACK is required.
-  On `PAIR_INIT` unicast, the slave adds the master as a temporary unencrypted
-  peer to send `ACK_PAIR_INIT`, then removes that peer and restarts ESP-NOW in
-  secure mode with PMK/LMK. The capability flags in `PAIR_INIT` are applied
-  immediately by the slave as its hardware capabilities.
+  (`PairInit`/`ACK_PAIR_INIT`, config status). Normal command/event traffic is suppressed.
+  Pair init payload is **caps (u8) + seed (u32, big-endian)** in a binary `PairInit`
+  frame (`frameType=NOW_FRAME_PAIR_INIT`); the slave must reply with a `ResponseMessage`
+  opcode `ACK_PAIR_INIT` before secure pairing/config traffic proceeds. No capability
+  ACK is required. On `PairInit` unicast, the slave adds the master as a temporary
+  unencrypted peer to send `ACK_PAIR_INIT`. After the ACK is **delivered OK**, it
+  waits **300 ms**, removes that peer, derives the LMK from the master MAC + seed +
+  `"LMK-V1"`, and re-adds the master encrypted (no ESP-NOW restart). The capability
+  flags in `PairInit` are applied **after** `ACK_PAIR_INIT` is confirmed OK.
+- **PMK** is always set on ESPNOW init using the shared `#define` (even for unencrypted
+  pairing traffic), so the stack never relies on a default PMK.
 
 ---
 
@@ -63,9 +67,9 @@ This document teaches an LLM how to **reason about and describe** the device’s
 
 ### Unpaired (`DEVICE_CONFIGURED=false`)
 
-- **Pairing transport only** (PAIR_INIT/ACK, config status). No normal events/commands.
-  Pair init must carry capability flags (O/S/R/F) so the slave can store its
-  hardware caps immediately.
+- **Pairing transport only** (`PairInit`/`ACK_PAIR_INIT`, config status). No normal events/commands.
+  Pair init must carry **caps (u8) + seed (u32, big-endian)** so the slave can
+  derive the LMK and apply hardware caps after `ACK_PAIR_INIT` is confirmed OK.
 - Advertising LED may blink; device sleeps per battery policy.
 - **Lock role only**: if battery is **Good**, the **open button may actuate the motor** (local control).
   If battery is **Low** or **Critical**, motor is disabled (see §5).

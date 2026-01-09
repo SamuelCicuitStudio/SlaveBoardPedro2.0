@@ -17,8 +17,11 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
   // Only translate messages destined to master (destId=1).
   if (msg.header.destId != 1) return false;
 
-  auto sendAckStr = [this](const String& s, bool ok = true) {
-    SendAck(s, ok);
+  auto sendResp = [this](uint16_t opcode, const uint8_t* payload, size_t len, bool ok = true) {
+    SendAck(opcode, payload, len, ok);
+  };
+  auto sendRespNoPayload = [this](uint16_t opcode, bool ok = true) {
+    SendAck(opcode, ok);
   };
 
   const uint8_t mod = msg.header.module;
@@ -34,50 +37,46 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
         sendState("TRSPRT");
         return true;
       case 0x01: // ConfigMode Response
-        sendAckStr(ACK_TEST_MODE, statusOk);
+        sendRespNoPayload(ACK_TEST_MODE, statusOk);
         return true;
       case 0x03: { // ConfigStatus Response
         if (pl.size() >= 2) {
           const bool configured = pl[1] != 0;
-          sendAckStr(configured ? ACK_CONFIGURED : ACK_NOT_CONFIGURED, configured);
+          sendRespNoPayload(configured ? ACK_CONFIGURED : ACK_NOT_CONFIGURED, configured);
           return true;
         }
         break;
       }
       case 0x04: // Arm Response
-        sendAckStr(ACK_ARMED, statusOk);
+        sendRespNoPayload(ACK_ARMED, statusOk);
         return true;
       case 0x05: // Disarm Response
-        sendAckStr(ACK_DISARMED, statusOk);
+        sendRespNoPayload(ACK_DISARMED, statusOk);
         return true;
       case 0x07: // CapsSet Response
-        sendAckStr(ACK_CAP_SET, statusOk);
+        sendRespNoPayload(ACK_CAP_SET, statusOk);
         return true;
       case 0x08: { // CapsQuery Response
         if (pl.size() >= 2) {
           uint8_t bits = pl[1];
           setCapBitsShadow_(bits);
-          String caps = String(ACK_CAPS) + ":O" + String((bits & 0x01) ? 1 : 0) +
-                        "S" + String((bits & 0x02) ? 1 : 0) +
-                        "R" + String((bits & 0x04) ? 1 : 0) +
-                        "F" + String((bits & 0x08) ? 1 : 0);
-          sendAckStr(caps, statusOk);
+          sendResp(ACK_CAPS, &bits, 1, statusOk);
           return true;
         }
         break;
       }
       case 0x0C: // NvsWrite Response
         if (pendingLockEmag_ >= 0) {
-          sendAckStr(pendingLockEmag_ ? ACK_LOCK_EMAG_ON : ACK_LOCK_EMAG_OFF, statusOk);
+          sendRespNoPayload(pendingLockEmag_ ? ACK_LOCK_EMAG_ON : ACK_LOCK_EMAG_OFF, statusOk);
           pendingLockEmag_ = -1;
           return true;
         }
-        sendAckStr(ACK_CAP_SET, statusOk);
+        sendRespNoPayload(ACK_CAP_SET, statusOk);
         return true;
       case 0x0B: { // PairingStatus Response
         if (pl.size() >= 2) {
           const bool configured = pl[1] != 0;
-          sendAckStr(configured ? ACK_CONFIGURED : ACK_NOT_CONFIGURED, configured);
+          sendRespNoPayload(configured ? ACK_CONFIGURED : ACK_NOT_CONFIGURED, configured);
           return true;
         }
         break;
@@ -87,39 +86,47 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
         if (pl.size() >= 7) {
           uint32_t up = (uint32_t)pl[1] | ((uint32_t)pl[2] << 8) |
                         ((uint32_t)pl[3] << 16) | ((uint32_t)pl[4] << 24);
-          uint16_t seq = (uint16_t)pl[5] | ((uint16_t)pl[6] << 8);
-          String hb = String(ACK_HEARTBEAT) + " seq=" + String(seq) + " up=" + String(up);
-          sendAckStr(hb, statusOk);
+          uint16_t seq16 = (uint16_t)pl[5] | ((uint16_t)pl[6] << 8);
+          struct HeartbeatPayload {
+            uint32_t seq_le;
+            uint32_t up_ms_le;
+          } payload{};
+          payload.seq_le = seq16;
+          payload.up_ms_le = up;
+          sendResp(ACK_HEARTBEAT,
+                   reinterpret_cast<const uint8_t*>(&payload),
+                   sizeof(payload),
+                   statusOk);
           return true;
         }
         break;
       }
       case 0x0E: // UnlockRequest Event
-        sendAckStr(EVT_GENERIC, false);
+        sendRespNoPayload(EVT_GENERIC, false);
         return true;
       case 0x0F: { // AlarmRequest Event
         uint8_t reason = (pl.size() >= 1) ? pl[0] : 0;
-        if (reason == 0) sendAckStr(EVT_BREACH, true);
-        else             sendAckStr(EVT_MTRTTRG, false);
+        if (reason == 0) sendRespNoPayload(EVT_BREACH, true);
+        else             sendRespNoPayload(EVT_MTRTTRG, false);
         return true;
       }
       case 0x10: // DriverFar
-        sendAckStr(ACK_DRIVER_FAR, true);
+        sendRespNoPayload(ACK_DRIVER_FAR, true);
         return true;
       case 0x15: // CancelTimers Response
-        sendAckStr(ACK_TMR_CANCELLED, statusOk);
+        sendRespNoPayload(ACK_TMR_CANCELLED, statusOk);
         return true;
       case 0x16: // SetRole Response
-        sendAckStr(ACK_ROLE, statusOk);
+        sendRespNoPayload(ACK_ROLE, statusOk);
         return true;
       case 0x11: // LockCanceled
-        sendAckStr(ACK_LOCK_CANCELED, pl.size() ? (pl[0] == 0) : true);
+        sendRespNoPayload(ACK_LOCK_CANCELED, pl.size() ? (pl[0] == 0) : true);
         return true;
       case 0x12: // AlarmOnlyMode
-        sendAckStr(ACK_ALARM_ONLY_MODE, pl.size() ? (pl[0] == 0) : true);
+        sendRespNoPayload(ACK_ALARM_ONLY_MODE, pl.size() ? (pl[0] == 0) : true);
         return true;
       case 0x14: // CriticalPower
-        sendAckStr(EVT_CRITICAL, false);
+        sendRespNoPayload(EVT_CRITICAL, false);
         return true;
       default:
         break;
@@ -131,7 +138,7 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
     if (op == 0x01 || op == 0x02) { // Lock/Unlock response
       if (!statusOk) {
         pendingForceAck_ = 0;
-        sendAckStr(ACK_LOCK_CANCELED, false);
+        sendRespNoPayload(ACK_LOCK_CANCELED, false);
         return true;
       }
       return true; // success: wait for MotorDone event
@@ -140,16 +147,16 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
       if (pl.size() >= 2) {
         bool locked = pl[1] != 0;
         if (pendingForceAck_ == 1) {
-          sendAckStr(ACK_FORCE_LOCKED, statusOk);
+          sendRespNoPayload(ACK_FORCE_LOCKED, statusOk);
           pendingForceAck_ = 0;
           return true;
         }
         if (pendingForceAck_ == 2) {
-          sendAckStr(ACK_FORCE_UNLOCKED, statusOk);
+          sendRespNoPayload(ACK_FORCE_UNLOCKED, statusOk);
           pendingForceAck_ = 0;
           return true;
         }
-        sendAckStr(locked ? ACK_LOCKED : ACK_UNLOCKED, statusOk);
+        sendRespNoPayload(locked ? ACK_LOCKED : ACK_UNLOCKED, statusOk);
         return true;
       }
     }
@@ -157,19 +164,19 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
 
   // ---------- Shock module ----------
   if (mod == static_cast<uint8_t>(transport::Module::Shock) && op == 0x03) {
-    sendAckStr(EVT_MTRTTRG, false);
+    sendRespNoPayload(EVT_MTRTTRG, false);
     return true;
   }
 
   // ---------- Switch/Reed module ----------
   if (mod == static_cast<uint8_t>(transport::Module::SwitchReed)) {
     if (op == 0x01 && pl.size() >= 1) { // DoorEdge
-      String evt = String(EVT_REED) + ":" + String(pl[0] ? 1 : 0);
-      sendAckStr(evt, false);
+      uint8_t open = pl[0] ? 1 : 0;
+      sendResp(EVT_REED, &open, 1, false);
       return true;
     }
     if (op == 0x02) { // OpenRequest
-      sendAckStr(EVT_GENERIC, false);
+      sendRespNoPayload(EVT_GENERIC, false);
       return true;
     }
   }
@@ -177,19 +184,19 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
   // ---------- Power module ----------
   if (mod == static_cast<uint8_t>(transport::Module::Power)) {
     if (op == 0x02) { // LowBatt
-      String evt = String(EVT_LWBT);
       if (!pl.empty()) {
-        evt += ":" + String(pl[0]);
+        sendResp(EVT_LWBT, &pl[0], 1, false);
+      } else {
+        sendRespNoPayload(EVT_LWBT, false);
       }
-      sendAckStr(evt, false);
       return true;
     }
     if (op == 0x03) { // CriticalBatt
-      String evt = String(EVT_CRITICAL);
       if (!pl.empty()) {
-        evt += ":" + String(pl[0]);
+        sendResp(EVT_CRITICAL, &pl[0], 1, false);
+      } else {
+        sendRespNoPayload(EVT_CRITICAL, false);
       }
-      sendAckStr(evt, false);
       return true;
     }
   }
@@ -198,17 +205,15 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
   if (mod == static_cast<uint8_t>(transport::Module::Fingerprint)) {
     switch (op) {
       case 0x01: // VerifyOn response
-        sendAckStr(ACK_FP_VERIFY_ON, statusOk);
+        sendRespNoPayload(ACK_FP_VERIFY_ON, statusOk);
         return true;
       case 0x02: // VerifyOff response
-        sendAckStr(ACK_FP_VERIFY_OFF, statusOk);
+        sendRespNoPayload(ACK_FP_VERIFY_OFF, statusOk);
         return true;
       case 0x0A: { // MatchEvent
         if (pl.size() >= 3) {
-          uint16_t id = (uint16_t)pl[0] | ((uint16_t)pl[1] << 8);
-          uint8_t conf = pl[2];
-          String line = String(EVT_FP_MATCH) + ":" + String(id) + "," + String(conf);
-          sendAckStr(line, false);
+          uint8_t out[3] = {pl[0], pl[1], pl[2]};
+          sendResp(EVT_FP_MATCH, out, sizeof(out), false);
           return true;
         }
         break;
@@ -216,10 +221,10 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
       case 0x0B: { // Fail/busy/no-sensor/tamper
         if (pl.empty()) break;
         switch (pl[0]) {
-          case 0: sendAckStr(EVT_FP_FAIL, false);          return true;
-          case 1: sendAckStr(ACK_FP_NO_SENSOR,     false); return true;
-          case 2: sendAckStr(ACK_FP_BUSY,          false); return true;
-          case 3: sendAckStr(ACK_ERR_TOKEN,        false); return true;
+          case 0: sendRespNoPayload(EVT_FP_FAIL, false);          return true;
+          case 1: sendRespNoPayload(ACK_FP_NO_SENSOR,     false); return true;
+          case 2: sendRespNoPayload(ACK_FP_BUSY,          false); return true;
+          case 3: sendRespNoPayload(ACK_ERR_TOKEN,        false); return true;
           default: break;
         }
         break;
@@ -228,7 +233,7 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
         if (pl.size() < 4) break;
         uint8_t stage = pl[0];
         uint8_t status = pl[3];
-        String ack;
+        uint16_t ack = 0;
         switch (stage) {
           case 1: ack = ACK_FP_ENROLL_START;   break;
           case 2: ack = ACK_FP_ENROLL_CAP1;    break;
@@ -240,48 +245,44 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
           case 8: ack = ACK_FP_ENROLL_TIMEOUT; break;
           default: break;
         }
-        if (ack.length()) {
-          sendAckStr(ack, status == 0);
+        if (ack != 0) {
+          sendRespNoPayload(ack, status == 0);
           return true;
         }
         break;
       }
       case 0x06: { // QueryDb response
         if (pl.size() >= 5) {
-          uint16_t count = (uint16_t)pl[1] | ((uint16_t)pl[2] << 8);
-          uint16_t cap   = (uint16_t)pl[3] | ((uint16_t)pl[4] << 8);
-          String line = String(ACK_FP_DB_INFO) + ":" + String(count) + "/" + String(cap);
-          sendAckStr(line, statusOk);
+          uint8_t out[4] = {pl[1], pl[2], pl[3], pl[4]};
+          sendResp(ACK_FP_DB_INFO, out, sizeof(out), statusOk);
           return true;
         }
         break;
       }
       case 0x07: { // NextId response
         if (pl.size() >= 3) {
-          uint16_t slot = (uint16_t)pl[1] | ((uint16_t)pl[2] << 8);
-          String line = String(ACK_FP_NEXT_ID) + ":" + String(slot);
-          sendAckStr(line, statusOk);
+          uint8_t out[2] = {pl[1], pl[2]};
+          sendResp(ACK_FP_NEXT_ID, out, sizeof(out), statusOk);
           return true;
         }
         break;
       }
       case 0x04: { // DeleteId response
         if (pl.size() >= 3) {
-          uint16_t slot = (uint16_t)pl[1] | ((uint16_t)pl[2] << 8);
-          String line = String(ACK_FP_ID_DELETED) + ":" + String(slot);
-          sendAckStr(line, statusOk);
+          uint8_t out[2] = {pl[1], pl[2]};
+          sendResp(ACK_FP_ID_DELETED, out, sizeof(out), statusOk);
           return true;
         }
         break;
       }
       case 0x05: // ClearDb response
-        sendAckStr(ACK_FP_DB_CLEARED, statusOk);
+        sendRespNoPayload(ACK_FP_DB_CLEARED, statusOk);
         return true;
       case 0x08: // AdoptSensor response
-        sendAckStr(statusOk ? ACK_FP_ADOPT_OK : ACK_FP_ADOPT_FAIL, statusOk);
+        sendRespNoPayload(statusOk ? ACK_FP_ADOPT_OK : ACK_FP_ADOPT_FAIL, statusOk);
         return true;
       case 0x09: // ReleaseSensor response
-        sendAckStr(statusOk ? ACK_FP_RELEASE_OK : ACK_FP_RELEASE_FAIL, statusOk);
+        sendRespNoPayload(statusOk ? ACK_FP_RELEASE_OK : ACK_FP_RELEASE_FAIL, statusOk);
         return true;
       default:
         break;
