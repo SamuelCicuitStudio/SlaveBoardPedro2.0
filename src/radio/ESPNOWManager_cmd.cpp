@@ -136,7 +136,6 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
     }
     DBG_PRINTF("[ESPNOW][CMD] CMD_SET_CHANNEL -> channel=%u (reboot)\n",
                static_cast<unsigned>(channel));
-    CONF->PutIntImmediate(MASTER_CHANNEL_KEY, static_cast<int>(channel));
 
     TxAckEvent ack{};
     size_t frameLen = 0;
@@ -152,17 +151,21 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
     }
 
     const uint32_t start = millis();
-    while ((millis() - start) < 500) {
+    while ((millis() - start) < 800) {
       bool inflight = false;
+      bool pending = false;
       taskENTER_CRITICAL(&sendMux_);
       inflight = hasInFlight_;
       taskEXIT_CRITICAL(&sendMux_);
-      if (!inflight) {
+      if (sendQ && uxQueueMessagesWaiting(sendQ) > 0) pending = true;
+      if (txQ && uxQueueMessagesWaiting(txQ) > 0) pending = true;
+      if (!inflight && !pending) {
         break;
       }
       vTaskDelay(pdMS_TO_TICKS(10));
       esp_task_wdt_reset();
     }
+    CONF->PutIntImmediate(MASTER_CHANNEL_KEY, static_cast<int>(channel));
     ResetManager::RequestReboot("ESP-NOW CMD_SET_CHANNEL");
     return;
   }

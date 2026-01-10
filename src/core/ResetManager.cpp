@@ -30,6 +30,6 @@ void ResetManager::RequestReset(ResetKind kind, const char* reason) {
 
   // Fallback: no device registered; restart immediately.
   DBG_PRINTLN("[Reset] No device registered, performing immediate restart.");
-  ESP.restart();
+  CONF->simulatePowerDown();
   while (true) { vTaskDelay(pdMS_TO_TICKS(1000)); }
 }

@@ -328,6 +328,13 @@ The slave ESP-NOW layer must implement the following to match the master:
   5) Apply the caps from `PairInit` only after `ACK_PAIR_INIT` is confirmed OK.
 - Store master MAC and current channel in NVS before secure rejoin.
 
+### Channel change (CMD_SET_CHANNEL)
+- Master broadcasts `CMD_SET_CHANNEL` to all paired slaves.
+- Slave writes the new channel to NVS and sends `ACK_SET_CHANNEL`.
+- After ACK delivery, slave reboots and ESP-NOW starts on the stored channel.
+- Master waits for all `ACK_SET_CHANNEL` responses before saving its own channel
+  to NVS and rebooting into Config Mode on that channel.
+
 ### Secure keys (must match master)
 - PMK is hardcoded as a `#define` on both master and slave.
 - Derive LMK from master MAC + seed + `"LMK-V1"` as in `SecurityKeys.hpp`.
