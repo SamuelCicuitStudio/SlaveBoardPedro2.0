@@ -183,7 +183,32 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
     }
     capBitsShadowValid_ = false;
     capBitsShadow_ = 0;
-    SendAck(isRemove ? ACK_REMOVED : ACK_FACTORY_RESET, true);
+    const uint16_t ackCode = isRemove ? ACK_REMOVED : ACK_FACTORY_RESET;
+    TxAckEvent ack{};
+    size_t frameLen = 0;
+    if (buildResponse_(ackCode, nullptr, 0, ack.data, &frameLen)) {
+      ack.len = static_cast<uint16_t>(frameLen);
+      ack.status = true;
+      ack.attempts = 0;
+      if (!sendAckNow_(ack)) {
+        SendAck(ackCode, true);
+      }
+    } else {
+      SendAck(ackCode, true);
+    }
+
+    const uint32_t start = millis();
+    while ((millis() - start) < 500) {
+      bool inflight = false;
+      taskENTER_CRITICAL(&sendMux_);
+      inflight = hasInFlight_;
+      taskEXIT_CRITICAL(&sendMux_);
+      if (!inflight) {
+        break;
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+      esp_task_wdt_reset();
+    }
     ResetManager::RequestFactoryReset(isRemove
                                           ? "ESP-NOW CMD_REMOVE_SLAVE"
                                           : "ESP-NOW CMD_FACTORY_RESET");
