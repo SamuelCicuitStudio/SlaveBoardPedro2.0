@@ -266,6 +266,21 @@ void RGBLed::flash(uint32_t color, uint16_t onMs, uint8_t priority, bool preempt
   playPattern(Pattern::FLASH_ONCE, o);
 }
 
+void RGBLed::setEnabled(bool enabled) {
+  _enabled = enabled;
+  if (!enabled) {
+    Cmd c{}; c.type = CmdType::STOP;
+    sendCmd(c, 0);
+  } else {
+    Cmd c{}; c.type = CmdType::SET_BACKGROUND; c.bgState = _bgState;
+    sendCmd(c, 0);
+  }
+}
+
+bool RGBLed::isEnabled() const {
+  return _enabled;
+}
+
 void RGBLed::playPattern(Pattern pat, const PatternOpts& opts) {
   Cmd c{}; c.type = CmdType::PLAY; c.pattern = pat; c.opts = opts;
   sendCmd(c, 0);
@@ -278,6 +293,7 @@ void RGBLed::taskThunk(void* arg) {
 
 bool RGBLed::sendCmd(const Cmd& c, TickType_t to) {
   if (!_queue) return false; // add this guard
+  if (!_enabled && c.type == CmdType::PLAY) return false;
   if (xQueueSend(_queue, &c, to) == pdTRUE) return true;
   if (c.type == CmdType::PLAY && c.opts.priority >= PRIO_ALERT) {
     Cmd dump{}; xQueueReceive(_queue, &dump, 0);
@@ -291,6 +307,20 @@ void RGBLed::taskLoop() {
   bool running = true;
 
   while (running) {
+    if (!_enabled) {
+      _haveCurrent = false;
+      writeColor(0,0,0);
+      Cmd cmd{};
+      while (xQueueReceive(_queue, &cmd, 0) == pdTRUE) {
+        if (cmd.type == CmdType::SHUTDOWN) { running = false; break; }
+        if (cmd.type == CmdType::SET_BACKGROUND) {
+          _bgState = cmd.bgState;
+        }
+      }
+      if (!running) break;
+      vTaskDelay(pdMS_TO_TICKS(50));
+      continue;
+    }
     // If we have an active pattern, step it with small waits and poll commands frequently.
     Cmd cmd{};
     if (_haveCurrent) {

@@ -255,6 +255,12 @@ This document teaches an LLM how to **reason about and describe** the device’s
 - LED overlays accompany major edges (door, shock, breach, enroll, motor complete) when power permits.
 - Logging follows the system logger; normal transport on/off strictly follows pairing state (pairing traffic remains when unpaired).
 
+### Boot/User button tap behavior (local only)
+
+- **Single tap**: prints the device MAC to serial (debug helper).
+- **Triple tap** (within `TAP_WINDOW_MS`): toggles RGB LED feedback **off/on** to reduce battery usage.
+  - This is a **local-only** toggle; it does not affect pairing state or transport behavior.
+
 ---
 
 ## 11) Names to keep distinct (do not conflate)
@@ -366,6 +372,7 @@ These are here to make firmware changes straightforward and unambiguous.
 - **Config Mode**: `EspNowManager::configMode_` toggled by `EspNowManager::setConfigMode()`, mirrored into `Device::configModeActive_` by `Device::updateConfigMode_()`. All security paths must use `configModeActive_` to gate behavior.
 - **Door open/closed**: `SwitchManager::isDoorOpen()` (backed by a fast IRQ on `REED_SWITCH_PIN` plus polling) read via `Device::isDoorOpen_()`. When `hasReed_==false`, the effective door is treated as **always closed** for breach/shock logic.
 - **Open button (Lock role only)**: `SwitchManager::isOpenButtonPressed()` (backed by a fast IRQ on `OPEN_SWITCH_PIN` plus polling) read from `Device::pollInputsAndEdges_()`. A **single rising edge per physical press** is used to drive behavior. When Paired and allowed by battery policy, this rising edge generates `OpenRequest` (Switch/Reed op=0x02) and `UnlockRequest` (Device op=0x0E); in Unpaired/Good-battery bench mode it drives a **local unlock task only** (pairing traffic still active; no normal events).
+- **User/Boot button taps**: `SwitchManager::handleBootTapHold_()` detects taps on `USER_BUTTON_PIN`. A **single tap** prints the MAC to serial; a **triple tap** toggles RGB LED feedback off/on.
 - **Shock sensor**: `ShockSensor::isTriggered()` now uses a hardware interrupt on `SHOCK_SENSOR1_PIN` to latch fast edges and is read via `Device::shockSensor` when `hasShock_==true` and `motorMoving==false`. In **Unpaired** bench mode it still detects shocks and logs/overlays locally but emits **no normal transport events** (pairing traffic only). In **Paired** mode, every trigger emits a Shock Trigger event, and raising `AlarmRequest(reason=shock)` is additionally gated by `effectiveArmed==true` (so in Config Mode only the Shock Trigger event is sent).
 - **Breach flag**: `EspNowManager::breach` (`Now->breach`) is the single source of truth: `0` = no breach, `1` = active breach. `Breach(set/clear)` events and the `breach` field in the state struct must mirror this flag.
 - **Battery bands**: `PowerManager::getPowerMode()` vs `CRITICAL_POWER_MODE` and `%` from `PowerManager::getBatteryPercentage()`. `Low` is defined as `< LOW_BATTERY_PCT` while not critical; `Critical` is `powerMode == CRITICAL_POWER_MODE`.

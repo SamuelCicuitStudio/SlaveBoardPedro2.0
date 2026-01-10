@@ -79,6 +79,8 @@ public:
   void rainbow(uint16_t stepMs = 20, uint8_t priority = PRIO_BACKGROUND, bool preempt = true, uint32_t durationMs = 0);
   void heartbeat(uint32_t color, uint16_t periodMs = 1500, uint8_t priority = PRIO_ACTION, bool preempt = true, uint32_t durationMs = 0);
   void flash(uint32_t color, uint16_t onMs = 120, uint8_t priority = PRIO_ACTION, bool preempt = true);
+  void setEnabled(bool enabled);
+  bool isEnabled() const;
 
   // If you want to (re)define pins later:
   void attachPins(int pinR, int pinG, int pinB, bool activeLow = true);
@@ -133,6 +135,7 @@ private:
 
   // background (worker owns)
   DeviceState _bgState = DeviceState::INIT;
+  bool        _enabled = true;
 };
 
 // Pointer-style convenience macro (like CONF/LOG):

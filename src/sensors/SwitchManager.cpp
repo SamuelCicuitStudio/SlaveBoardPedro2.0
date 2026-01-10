@@ -2,6 +2,8 @@
 #include <ResetManager.hpp>
 #include <RGBLed.hpp>
 #include <Utils.hpp>
+#include <esp_system.h>
+#include <stdio.h>
 
 // Small helper
 static inline uint32_t nowMs() { return millis(); }
@@ -13,6 +15,7 @@ SwitchManager::SwitchManager() {
     s_instance_ = this;
     // Your original behavior: set BOOT input; leave other pins as-is.
     pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+    pinMode(USER_BUTTON_PIN, INPUT_PULLUP);
 
     DBGSTR();
     DBG_PRINTLN("###########################################################");
@@ -27,6 +30,7 @@ SwitchManager::SwitchManager() {
 void SwitchManager::begin() {
     // Keep minimal (same as your original ctor setup); safe to re-call.
     pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+    pinMode(USER_BUTTON_PIN, INPUT_PULLUP);
     pinMode(REED_SWITCH_PIN, INPUT_PULLUP);
     pinMode(OPEN_SWITCH_PIN, INPUT_PULLUP);
 
@@ -48,6 +52,9 @@ void SwitchManager::service() {
 
     // Handle BOOT button tap/hold state machine
     handleBootTapHold_();
+
+    // Handle USER button tap state machine
+    handleUserTap_();
 }
 
 // ------------------------------------------------------------
@@ -156,6 +163,73 @@ void SwitchManager::handleBootTapHold_() {
         tapCount_ = 0;
     }
     bootPrev_ = pressed;
+}
+
+// ------------------------------------------------------------
+// USER button tap: single tap prints MAC, triple tap toggles RGB
+// ------------------------------------------------------------
+void SwitchManager::handleUserTap_() {
+    const bool pressed = (digitalRead(USER_BUTTON_PIN) == LOW);
+    const uint32_t t   = nowMs();
+
+    if (pressed && !userPrev_) {
+        userPressMs_ = t;
+    }
+
+    if (!pressed && userPrev_) {
+        const uint32_t pressDur = t - userPressMs_;
+        userTapCount_++;
+        userLastTapMs_ = t;
+
+        DBGSTR();
+        DBG_PRINT  ("[SW] User tap detected (count="); DBG_PRINT((int)userTapCount_);
+        DBG_PRINT  (", dur="); DBG_PRINT((int)pressDur);
+        DBG_PRINTLN(" ms)");
+        DBGSTP();
+
+        DBG_PRINTLN("[SW] User tap -> print MAC");
+        printMac_();
+
+        if (userTapCount_ == 3) {
+            if ((t - userLastTapMs_) <= TAP_WINDOW_MS) {
+                DBG_PRINTLN("[SW] User triple tap -> toggle RGB feedback");
+                toggleRgbFeedback_();
+                userTapCount_ = 0;
+            } else {
+                userTapCount_ = 0;
+            }
+        }
+    }
+
+    if (userTapCount_ > 0 && (t - userLastTapMs_) > 1500U) {
+        userTapCount_ = 0;
+    }
+
+    userPrev_ = pressed;
+}
+
+void SwitchManager::printMac_() {
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    char macStr[18];
+    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    DBGSTR();
+    DBG_PRINTLN("###########################################################");
+    DBG_PRINTLN(String("#       Slave MAC Address:     ") + macStr + "          #");
+    DBG_PRINTLN("###########################################################");
+    DBGSTP();
+}
+
+void SwitchManager::toggleRgbFeedback_() {
+    RGBLed* rgb = RGBLed::TryGet();
+    if (!rgb) {
+        DBG_PRINTLN("[SW] RGB feedback toggle ignored (RGB not ready)");
+        return;
+    }
+    const bool next = !rgb->isEnabled();
+    rgb->setEnabled(next);
+    DBG_PRINTLN(next ? "[SW] RGB feedback enabled" : "[SW] RGB feedback disabled");
 }
 
 // ------------------------------------------------------------

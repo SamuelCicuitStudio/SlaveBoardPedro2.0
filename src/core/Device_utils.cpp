@@ -23,6 +23,9 @@ bool Device::isMotorMoving_() const{ return motorDriver && motorDriver->isMoving
 
 void Device::printMACIfUserButton_() const {
   // Debug helper: print MAC only when pressing USER_BUTTON_PIN.
+  if (Sw) {
+    return;
+  }
   if (!digitalRead(USER_BUTTON_PIN)) {
     uint8_t mac[6]; esp_read_mac(mac, ESP_MAC_WIFI_STA);
     char macStr[18];

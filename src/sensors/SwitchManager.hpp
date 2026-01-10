@@ -71,6 +71,16 @@ private:
     // helpers
     void handleBootTapHold_();
 
+    // -------- USER button tap state machine --------
+    bool     userPrev_      = false;
+    uint8_t  userTapCount_  = 0;
+    uint32_t userPressMs_   = 0;
+    uint32_t userLastTapMs_ = 0;
+
+    void handleUserTap_();
+    void printMac_();
+    void toggleRgbFeedback_();
+
     // Fast ISR hooks for door/open edges (ESP32 / Arduino interrupt)
     static void IRAM_ATTR doorIsrThunk_();
     static void IRAM_ATTR openIsrThunk_();
