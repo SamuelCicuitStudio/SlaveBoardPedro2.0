@@ -11,6 +11,7 @@
 #include <Utils.hpp>
 #include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 #include <freertos/task.h>
 
 using transport::MessageType;
@@ -165,11 +166,38 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
     ResetManager::RequestReboot("ESP-NOW CMD_SET_CHANNEL");
     return;
   }
-  if (opcode == CMD_FACTORY_RESET || opcode == CMD_REMOVE_SLAVE) {
-    const bool isRemove = (opcode == CMD_REMOVE_SLAVE);
-    DBG_PRINTLN(isRemove
-                    ? "[ESPNOW][CMD] CMD_REMOVE_SLAVE -> Device Reset procedure (factory)"
-                    : "[ESPNOW][CMD] CMD_FACTORY_RESET -> Device Reset procedure (factory)");
+  if (opcode == CMD_REMOVE_SLAVE) {
+    DBG_PRINTLN("[ESPNOW][CMD] CMD_REMOVE_SLAVE -> Device Reset procedure (factory)");
+
+    TxAckEvent ack{};
+    size_t frameLen = 0;
+    if (buildResponse_(ACK_REMOVED, nullptr, 0, ack.data, &frameLen)) {
+      ack.len = static_cast<uint16_t>(frameLen);
+      ack.status = true;
+      ack.attempts = 0;
+      if (!sendAckNow_(ack)) {
+        SendAck(ACK_REMOVED, true);
+      }
+    } else {
+      SendAck(ACK_REMOVED, true);
+    }
+
+    const uint32_t start = millis();
+    while ((millis() - start) < 800) {
+      bool inflight = false;
+      bool pending = false;
+      taskENTER_CRITICAL(&sendMux_);
+      inflight = hasInFlight_;
+      taskEXIT_CRITICAL(&sendMux_);
+      if (sendQ && uxQueueMessagesWaiting(sendQ) > 0) pending = true;
+      if (txQ && uxQueueMessagesWaiting(txQ) > 0) pending = true;
+      if (!inflight && !pending) {
+        break;
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+      esp_task_wdt_reset();
+    }
+
     if (CONF) {
       CONF->PutString(MASTER_ESPNOW_ID, MASTER_ESPNOW_ID_DEFAULT);
       CONF->PutString(MASTER_LMK_KEY, MASTER_LMK_DEFAULT);
@@ -183,35 +211,26 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
     }
     capBitsShadowValid_ = false;
     capBitsShadow_ = 0;
-    const uint16_t ackCode = isRemove ? ACK_REMOVED : ACK_FACTORY_RESET;
-    TxAckEvent ack{};
-    size_t frameLen = 0;
-    if (buildResponse_(ackCode, nullptr, 0, ack.data, &frameLen)) {
-      ack.len = static_cast<uint16_t>(frameLen);
-      ack.status = true;
-      ack.attempts = 0;
-      if (!sendAckNow_(ack)) {
-        SendAck(ackCode, true);
-      }
-    } else {
-      SendAck(ackCode, true);
+    ResetManager::RequestFactoryReset("ESP-NOW CMD_REMOVE_SLAVE");
+    return;
+  }
+  if (opcode == CMD_FACTORY_RESET) {
+    DBG_PRINTLN("[ESPNOW][CMD] CMD_FACTORY_RESET -> Device Reset procedure (factory)");
+    if (CONF) {
+      CONF->PutString(MASTER_ESPNOW_ID, MASTER_ESPNOW_ID_DEFAULT);
+      CONF->PutString(MASTER_LMK_KEY, MASTER_LMK_DEFAULT);
+      CONF->PutBool(DEVICE_CONFIGURED, false);
+      CONF->PutBool(ARMED_STATE, false);
+      CONF->PutBool(MOTION_TRIG_ALARM, false);
+      CONF->PutBool(HAS_OPEN_SWITCH_KEY,  false);
+      CONF->PutBool(HAS_SHOCK_SENSOR_KEY, false);
+      CONF->PutBool(HAS_REED_SWITCH_KEY,  false);
+      DBG_PRINTLN("[ESPNOW][CMD] Reset -> cleared pairing");
     }
-
-    const uint32_t start = millis();
-    while ((millis() - start) < 500) {
-      bool inflight = false;
-      taskENTER_CRITICAL(&sendMux_);
-      inflight = hasInFlight_;
-      taskEXIT_CRITICAL(&sendMux_);
-      if (!inflight) {
-        break;
-      }
-      vTaskDelay(pdMS_TO_TICKS(10));
-      esp_task_wdt_reset();
-    }
-    ResetManager::RequestFactoryReset(isRemove
-                                          ? "ESP-NOW CMD_REMOVE_SLAVE"
-                                          : "ESP-NOW CMD_FACTORY_RESET");
+    capBitsShadowValid_ = false;
+    capBitsShadow_ = 0;
+    SendAck(ACK_FACTORY_RESET, true);
+    ResetManager::RequestFactoryReset("ESP-NOW CMD_FACTORY_RESET");
     return;
   }
 

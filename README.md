@@ -86,6 +86,15 @@ Effects:
 
 ---
 
+### Remove / Unpair (`CMD_REMOVE_SLAVE`)
+
+- Slave sends `ACK_REMOVED` while still configured (master MAC + LMK intact).
+- After the ACK is delivered and the TX queue is drained, it clears pairing keys
+  and performs the reset.
+- Master should clear the slot/peer only after receiving `ACK_REMOVED`.
+
+---
+
 ## Security Behavior
 
 ### Shock / Motion
