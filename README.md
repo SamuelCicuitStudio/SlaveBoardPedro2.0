@@ -1,4 +1,4 @@
-﻿# Slave Board Firmware (Smart Lock / Alarm) â€” User Guide
+# Slave Board Firmware (Smart Lock / Alarm) — User Guide
 
 This firmware runs on a **Slave board** that pairs to a **Master controller** over ESP-NOW.
 Once paired, the slave reports status (battery, liveness, sensors) and accepts commands
@@ -20,7 +20,7 @@ For deep technical details (protocol frames/opcodes), see the `readme/` folder a
 
 ---
 
-## First Boot (What Youâ€™ll See)
+## First Boot (What You'll See)
 
 - If the slave is **not paired yet**, it will wait for pairing from the master.
 - If the slave is **already paired**, it will reconnect to the saved master after reboot.
@@ -36,7 +36,7 @@ For deep technical details (protocol frames/opcodes), see the `readme/` folder a
 4. Watch the slave LED and the master UI:
    - The master will send an init message to the slave.
    - The slave confirms it received it, then both sides switch to the secured link automatically.
-5. When pairing is complete, the slave will show the paired/online LED pattern and the master should show â€œpaired/configuredâ€.
+5. When pairing is complete, the slave will show the paired/online LED pattern and the master should show "paired/configured".
 
 If pairing fails, keep the devices closer, verify power/battery, and retry from the master UI.
 
@@ -54,7 +54,7 @@ If pairing fails, keep the devices closer, verify power/battery, and retry from 
 ### BOOT button (`BOOT_BUTTON_PIN`)
 
 - **Long press**: triggers **factory reset** (clears pairing and settings) and restarts.
-- **Triple tap**: reserved for the existing â€œmodeâ€ shortcut on your build (unchanged).
+- **Triple tap**: reserved for the existing "mode" shortcut on your build (unchanged).
 
 ---
 
@@ -64,7 +64,7 @@ You can remove a slave in two ways:
 
 ### A) Remove from the Master UI (recommended)
 
-- Use the master UI â€œRemoveâ€ action for that slave.
+- Use the master UI "Remove" action for that slave.
 - The slave will first send a confirmation back to the master, then erase pairing and restart.
 - After the master receives the confirmation, it clears the slot and updates the UI.
 
@@ -115,13 +115,13 @@ The RGB LED shows two kinds of indications:
 | Enroll fail | blink | vivid red `#FF1744` |
 | Enroll timeout | blink | orange-red `#FF5A00` |
 
-Tip: If you used triple-tap to disable RGB feedback, the device will keep working but wonâ€™t show these patterns until you enable RGB again.
+Tip: If you used triple-tap to disable RGB feedback, the device will keep working but won't show these patterns until you enable RGB again.
 
 ---
 
 ## Fingerprint (Lock variant only)
 
-If your slave has a fingerprint sensor and itâ€™s enabled in the master configuration:
+If your slave has a fingerprint sensor and it's enabled in the master configuration:
 - The master UI controls the main flows: enable/disable verify loop, enroll, delete, query DB.
 - During enrollment, the slave LED shows the enrollment step colors above.
 
@@ -137,7 +137,7 @@ If your slave has a fingerprint sensor and itâ€™s enabled in the master con
 
 ## Troubleshooting
 
-- **Pairing doesnâ€™t complete**: move the slave closer to the master, ensure both are powered, retry pairing from the master UI.
+- **Pairing doesn't complete**: move the slave closer to the master, ensure both are powered, retry pairing from the master UI.
 - **No LED activity**: RGB feedback may be disabled (triple-tap USER button to re-enable).
 - **Device seems asleep**: trigger a wake source (door open/close, open button, or power-cycle).
 
@@ -157,7 +157,7 @@ If your slave has a fingerprint sensor and itâ€™s enabled in the master con
 
 This section is intentionally detailed so the slave behavior is unambiguous.
 
-### Core variables (what defines â€œmodeâ€)
+### Core variables (what defines "mode")
 
 - **Role**: Lock variant vs Alarm variant (compile-time / hardware build)
 - **Pairing**: Paired vs Unpaired
@@ -244,9 +244,9 @@ This section is a verbatim copy of the documentation files under SlaveBoardFix/r
 
 ## Source: readme/behavior.md
 
-# README â€” LLM Guide for Device Behavior (Lock vs. Alarm)
+# README ? Guide for Device Behavior (Lock vs. Alarm)
 
-This document teaches an LLM how to **reason about and describe** the deviceâ€™s runtime behavior **without contradiction**. It encodes authoritative rules, precedence, and outputs for every mode/state.
+This document teaches a developer how to **reason about and describe** the device's runtime behavior **without contradiction**. It encodes authoritative rules, precedence, and outputs for every mode/state.
 
 ---
 
@@ -318,7 +318,7 @@ This document teaches an LLM how to **reason about and describe** the deviceâ�
   derive the LMK and apply hardware caps after `ACK_PAIR_INIT` is confirmed OK.
 - Advertising LED may blink; device sleeps per battery policy.
 - **Lock role only**: if battery is **Good**, the **open button may actuate the motor** (local control).
-  If battery is **Low** or **Critical**, motor is disabled (see Â§5).
+  If battery is **Low** or **Critical**, motor is disabled (see §5).
 
 ### Paired (`DEVICE_CONFIGURED=true`)
 
@@ -414,7 +414,7 @@ This document teaches an LLM how to **reason about and describe** the deviceâ�
 - **Power overlays** (Low/Critical):
   `AlarmOnlyMode` (Lock role only), `LockCanceled` (if a motor action was blocked), `CriticalPower`, and `Power LowBatt/CriticalBatt` as applicable.
 
-### Lock role â€” specifics
+### Lock role ? specifics
 
 - **Motor control**:
 
@@ -424,7 +424,7 @@ This document teaches an LLM how to **reason about and describe** the deviceâ�
 
 - **Breach (Armed)**: same as Alarm role - **reed->open** -> `AlarmRequest(reason=breach)`; set/clear `breach` in `StateReport`.
 
-### Alarm role â€” specifics
+### Alarm role ? specifics
 
 - **Breach (Armed)**: same as Lock role - any **reed->open** transition -> `AlarmRequest(reason=breach)`; set/clear `breach`.
 - **Motor/open/fingerprint**: commands return **UNSUPPORTED**; no related events are generated.
@@ -455,7 +455,7 @@ This document teaches an LLM how to **reason about and describe** the deviceâ�
 
 ## 9) Mode Matrices (normative)
 
-### A) Role Ã— Pairing Ã— Config Ã— Battery
+### A) Role × Pairing × Config × Battery
 
 | Role  | Paired | Config Mode | Battery      | Motor                        | Shock Reports                                   | Breach                | Transport                     |
 | ----- | ------ | ----------- | ------------ | ---------------------------- | ----------------------------------------------- | --------------------- | ----------------------------- |
@@ -488,7 +488,7 @@ This document teaches an LLM how to **reason about and describe** the deviceâ�
 - Even when battery band is **Low** or **Critical**, the device does **not** enter sleep/deep-sleep
   until two conditions are satisfied:
   1. The band has been **stable** for at least `BATTERY_BAND_CONFIRM_MS` (anti-flicker), and
-  2. The global **Low/Critical grace window** (`LOW_CRIT_GRACE_MS` â‰ˆ 60s) has elapsed **and**
+  2. The global **Low/Critical grace window** (`LOW_CRIT_GRACE_MS` ? 60s) has elapsed **and**
      no critical operations are in progress (notably, **motor is not moving**).
 - If battery transitions into Low/Critical **while the motor is already closing/opening the door**,
   the motor is allowed to **finish that motion**; sleep is scheduled for the earliest moment after
@@ -517,13 +517,13 @@ This document teaches an LLM how to **reason about and describe** the deviceâ�
 
 ---
 
-## 12) Answering Patterns (LLM formatting rules)
+## 12) Answering Patterns (formatting rules)
 
-When asked â€œwhat happens ifâ€¦â€, **always**:
+When asked "what happens if...", **always**:
 
 1. **Normalize inputs** explicitly:
-   `Role=â€¦, Paired=â€¦, ConfigMode=â€¦, Battery=â€¦, Armed=â€¦`
-2. **Apply precedence** in order (Â§0) and call out any overrides (e.g., â€œBattery=Critical â†’ motor disabled regardless of role/armed.â€).
+   `Role=..., Paired=..., ConfigMode=..., Battery=..., Armed=...`
+2. **Apply precedence** in order (§0) and call out any overrides (e.g., "Battery=Critical ? motor disabled regardless of role/armed.").
 3. **State outputs** in this order, omitting irrelevant ones:
 
    - **Transport**: `sends/does not send` + which events (e.g., `DoorOpen`, `Shock Trigger`, `AlarmRequest(reason=breach|shock)`, overlays).
@@ -531,37 +531,37 @@ When asked â€œwhat happens ifâ€¦â€, **always**:
    - **Breach**: `set/cleared/not evaluated` and why (armed/config/role).
    - **Sleep**: whether it sleeps immediately/after TX/normal.
 
-4. **Avoid speculation**: if a detail is unspecified (e.g., exact debounce), say â€œimplementation-standard; not specified hereâ€.
+4. **Avoid speculation**: if a detail is unspecified (e.g., exact debounce), say "implementation-standard; not specified here".
 
 ### Examples
 
-**Example 1 â€” Alarm role, Paired, Armed, Good battery, reed opens**
+**Example 1 ? Alarm role, Paired, Armed, Good battery, reed opens**
 
 - Inputs: Role=Alarm, Paired=Yes, ConfigMode=No, Battery=Good, Armed=Yes
 - Precedence: none override.
 - Result: Transport sends `DoorOpen`, raises `AlarmRequest(reason=breach)`, sets `breach=1` in `StateReport`. Motor N/A.
 
-**Example 2 â€” Lock role, Unpaired, Good battery, user presses button**
+**Example 2 ? Lock role, Unpaired, Good battery, user presses button**
 
 - Inputs: Role=Lock, Paired=No, ConfigMode=N/A, Battery=Good, Armed=any
 - Precedence: Unpaired -> pairing traffic only (no normal events/commands).
 - Result: Button **drives motor** locally; pairing traffic only; local LEDs/logs update.
 
-**Example 3 â€” Lock role, Paired, Low battery, unlock command**
+**Example 3 ? Lock role, Paired, Low battery, unlock command**
 
 - Inputs: Role=Lock, Paired=Yes, ConfigMode=No, Battery=Low, Armed=any
-- Precedence: Battery Low â‡’ motor disabled.
+- Precedence: Battery Low ? motor disabled.
 - Result: Motor action **canceled**; send overlays (`AlarmOnlyMode`, `LockCanceled`, `Power LowBatt`), then **sleep**. No `AlarmRequest`.
 
-**Example 4 â€” Any role, Paired, Config Mode, shock triggers**
+**Example 4 ? Any role, Paired, Config Mode, shock triggers**
 
 - Inputs: Role=Alarm|Lock, Paired=Yes, ConfigMode=Yes, Battery=Good, Armed=Yes
-- Precedence: Config Mode â‡’ security off.
+- Precedence: Config Mode ? security off.
 - Result: Send **Shock Trigger only** (diagnostic), **no AlarmRequest**, **no breach**.
 
 ---
 
-## 13) Quick FAQ for the LLM
+## 13) Quick FAQ
 
 - **Q: Do we ever send transport while Unpaired?**
   **A: Yes, pairing traffic only.** Unpaired means **pairing-only transport**; normal events/commands are suppressed. Local LEDs/logs (and in Lock role, local motor via button if battery is Good) still apply.
@@ -583,7 +583,7 @@ Before sending an answer, verify:
 
 - [ ] You listed **inputs** and applied **precedence**.
 - [ ] You respected **role gating** and **battery** rules.
-- [ ] You didnâ€™t conflate **Alarm role** with **AlarmOnlyMode**.
+- [ ] You didn't conflate **Alarm role** with **AlarmOnlyMode**.
 - [ ] You only emitted **normal transport** when **Paired** (pairing traffic allowed when Unpaired).
 - [ ] You avoided breach/AlarmRequest in **Config Mode**.
 - [ ] Lock role never emits `MotorDone` from door edges.
@@ -598,12 +598,12 @@ Before sending an answer, verify:
 - Every core variable (`Role`, `Paired`, `ConfigMode`, `Battery band`, `Armed`) is **binary** at runtime; there is **no third state** (for example no "partially armed").
 - For any given tuple  
   `Role, Paired, ConfigMode, Battery, Armed`  
-  **exactly one row** of the matrix in **Â§9.A** applies; answers must not describe mixtures of rows.
+  **exactly one row** of the matrix in **§9.A** applies; answers must not describe mixtures of rows.
 - Any wording like "**may** drive motor" or "**may** send event" is shorthand for  
   "**will** do this **whenever all the preconditions in that row are satisfied**"; there is no randomness or hidden policy.
 - When `Paired=false`, `ConfigMode` is still an internal flag but has **no observable effect** on normal behavior; only **pairing traffic** is present. Externally, treat this as `ConfigMode=No`.
 
-### 15.2 Implementation anchors (mapping spec â†’ code)
+### 15.2 Implementation anchors (mapping spec ? code)
 
 These are here to make firmware changes straightforward and unambiguous.
 
@@ -631,7 +631,7 @@ These are here to make firmware changes straightforward and unambiguous.
   - Shock `Trigger` + `AlarmRequest(reason=shock)` are emitted from `Device::pollInputsAndEdges_()` when shock conditions are met.
   - Breach `AlarmRequest(reason=breach)` + `Breach(set/clear)` come from `Device::raiseBreachIfNeeded_()` / `Device::clearBreachIfClosed_()`.
   - `DriverFar` events (and `ACK_DRIVER_FAR`) are generated only when Lock role, Paired, `effectiveArmed=true`, door open, and `locked=false`, with a minimum interval of `DRIVER_FAR_ACK_MS`.
-- **Sleep & wake**: `SleepTimer` is serviced from `Device::loop()`; all paths that send Low/Critical overlays or critical open-button requests must either call `SleepTimer::goToSleep()` or `Device::enterCriticalSleepUnpaired_()` as described in Â§5 and Â§8.
+- **Sleep & wake**: `SleepTimer` is serviced from `Device::loop()`; all paths that send Low/Critical overlays or critical open-button requests must either call `SleepTimer::goToSleep()` or `Device::enterCriticalSleepUnpaired_()` as described in §5 and §8.
 
 ---
 
@@ -673,7 +673,7 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 - DriverFar: lock role only, paired+armed+doorOpen+!locked, rate-limited.
 - Open button (lock role, hasOpenSwitch_): OpenRequest + UnlockRequest; no local motor when paired. In critical power, short TX window then sleep.
 - Fingerprint (lock role with FP): match/fail/tamper/busy/no-sensor events, enroll progress, adopt/release, DB info/next ID. No FP activity in alarm role.
-- Low/Critical power (paired): emit LockCanceled (critical flag), AlarmOnlyMode, CriticalPower, Power Low/Critical events then sleep. Unpaired critical â†’ deep sleep; unpaired low â†’ disable FP then sleep.
+- Low/Critical power (paired): emit LockCanceled (critical flag), AlarmOnlyMode, CriticalPower, Power Low/Critical events then sleep. Unpaired critical ? deep sleep; unpaired low ? disable FP then sleep.
 
 ## Battery and sleep
 - `enforcePowerPolicy_()` drives low/critical overlays and sleep. SleepTimer serviced each loop. Critical/unpaired uses deep sleep; paired uses sleep timer after emitting required events.
@@ -710,7 +710,7 @@ This document describes how the fingerprint subsystem is wired, how commands/eve
 - `Fingerprint::begin()` probes the sensor without adopting (no password change). If trusted and present, it starts verify mode.
 - `refreshCapabilities_()` in Device gates FP creation; alarm role forces FP off.
 
-## Command handling (transport â†’ FP)
+## Command handling (transport ? FP)
 - FP module opcodes (transport):
   - `0x01 VerifyOn`: start verify loop (5 Hz). Status: OK/BUSY/DENIED.
   - `0x02 VerifyOff`: stop verify loop. Status: OK.
@@ -723,7 +723,7 @@ This document describes how the fingerprint subsystem is wired, how commands/eve
   - `0x09 ReleaseSensor`: set password to default (0). Status OK/APPLY_FAIL.
 - Handled by `FingerprintHandler`; responses carry status plus optional data.
 
-## Events (FP â†’ transport â†’ ESP-NOW)
+## Events (FP ? transport ? ESP-NOW)
 - `0x0A MatchEvent`: id(u16), confidence(u8).
 - `0x0B Fail/Busy/NoSensor/Tamper`: reason(u8) 0=match_fail,1=no_sensor,2=busy,3=tamper.
 - `0x0C EnrollProgress`: stage(u8 1..8), slot(u16), status(u8 0=OK,1=FAIL/TIMEOUT).
@@ -744,17 +744,17 @@ This document describes how the fingerprint subsystem is wired, how commands/eve
 ## ESP-NOW / CommandAPI bridge
 - CMD_FP_* tokens are parsed by ESP-NOW and injected into transport (VerifyOn/Off, Enroll/Delete/Clear, QueryDb, NextId, Adopt/Release).
 - Transport Responses/Events to destId=1 are mapped to CommandAPI ACKs:
-  - Match â†’ `ACK_FINGERPRINT_MATCH`
-  - Fail â†’ `ACK_FINGERPRINT_FAIL`
-  - NoSensor â†’ `ACK_FP_NO_SENSOR`
-  - Busy â†’ `ACK_FP_BUSY`
-  - Tamper â†’ `ACK_ERR_TOKEN`
-  - Enroll stages â†’ `ACK_FP_ENROLL_*` (START/CAP1/LIFT/CAP2/STORING/OK/FAIL/TIMEOUT)
-  - QueryDb â†’ `ACK_FP_DB_INFO`
-  - NextId â†’ `ACK_FP_NEXT_ID`
-  - DeleteId â†’ `ACK_FP_ID_DELETED`
-  - ClearDb â†’ `ACK_FP_DB_CLEARED`
-  - Adopt/Release â†’ `ACK_FP_ADOPT_OK/FAIL`, `ACK_FP_RELEASE_OK/FAIL`
+  - Match ? `ACK_FINGERPRINT_MATCH`
+  - Fail ? `ACK_FINGERPRINT_FAIL`
+  - NoSensor ? `ACK_FP_NO_SENSOR`
+  - Busy ? `ACK_FP_BUSY`
+  - Tamper ? `ACK_ERR_TOKEN`
+  - Enroll stages ? `ACK_FP_ENROLL_*` (START/CAP1/LIFT/CAP2/STORING/OK/FAIL/TIMEOUT)
+  - QueryDb ? `ACK_FP_DB_INFO`
+  - NextId ? `ACK_FP_NEXT_ID`
+  - DeleteId ? `ACK_FP_ID_DELETED`
+  - ClearDb ? `ACK_FP_DB_CLEARED`
+  - Adopt/Release ? `ACK_FP_ADOPT_OK/FAIL`, `ACK_FP_RELEASE_OK/FAIL`
 - In alarm role or when FP absent, these commands return UNSUPPORTED and no ACKs are emitted from FP paths.
 
 ## Persistence and config
