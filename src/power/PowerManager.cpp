@@ -21,17 +21,15 @@ PowerManager* PowerManager::s_instance = nullptr;
 #endif
 #endif
 
-void PowerManager::Init(TwoWire* wirePort) {
+void PowerManager::Init() {
     if (!s_instance) {
-        s_instance = new PowerManager(wirePort);
-    } else if (wirePort) {
-        s_instance->attachWire(wirePort);
+        s_instance = new PowerManager();
     }
 }
 
 PowerManager* PowerManager::Get() {
     if (!s_instance) {
-        s_instance = new PowerManager(nullptr);
+        s_instance = new PowerManager();
     }
     return s_instance;
 }
@@ -40,11 +38,6 @@ PowerManager* PowerManager::TryGet() {
     return s_instance;
 }
 
-void PowerManager::attachWire(TwoWire* wirePort) {
-    if (wirePort) {
-        this->wirePort = wirePort;
-    }
-}
 
 #ifndef MAX17055_SDA_PIN
 #define MAX17055_SDA_PIN 4
@@ -65,8 +58,7 @@ namespace {
     }
 }
 
-PowerManager::PowerManager(TwoWire* wirePort)
-: wirePort(wirePort) {
+PowerManager::PowerManager() {
     mtx_ = xSemaphoreCreateRecursiveMutex();
 
     DBGSTR();

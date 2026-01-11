@@ -10,7 +10,6 @@
 #define POWER_MANAGER_H
 
 #include <Arduino.h>
-#include <Wire.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <MAX17055.hpp>
@@ -49,14 +48,11 @@ enum PowerMode {
 class PowerManager {
 public:
     // ---------------- Singleton access ----------------
-    // Call once at boot to set the I2C wire port (optional).
-    static void        Init(TwoWire* wirePort = nullptr);
+    static void        Init();
     // Always returns a valid pointer (auto-creates with null wire if no Init yet).
     static PowerManager* Get();
     // Returns nullptr if never created.
     static PowerManager* TryGet();
-
-    void attachWire(TwoWire* wirePort);
 
     // One-time init (I2C + gauge config)
     void begin();
@@ -93,8 +89,7 @@ public:
     bool        isCharging;
 
 private:
-    PowerManager(TwoWire* wirePort);
-    PowerManager() = delete;
+    PowerManager();
     PowerManager(const PowerManager&) = delete;
     PowerManager& operator=(const PowerManager&) = delete;
 
@@ -103,7 +98,6 @@ private:
     // Optional external hook, currently unused
     MAX17055* fuelGauge = nullptr;
 
-    TwoWire*  wirePort;
     MAX17055  gauge_;            // Owned gauge instance (no RTOS inside)
 
     // Cached BattInfo snapshot (used by other classes).
