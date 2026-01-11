@@ -213,9 +213,3 @@
 #define PREER_CHANNEL           0
 
 #endif // CONFIG_H
-
-
-
-
-
-

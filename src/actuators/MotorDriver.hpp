@@ -84,7 +84,7 @@ private:
     bool     isElectroMag_();   // fetch LOCK_EMAG_KEY from NVS / ConfigManager
 
     // Motion bookkeeping (safe while holding mtx_)
-    inline void motionStart() { motorRunning = true; DBG_PRINTLN("[Motor] Motion Started! ▶️");  motionStartMs = millis(); }
+    inline void motionStart() { motorRunning = true ; DBG_PRINTLN("[Motor] Motion Started! ▶️");  motionStartMs = millis(); }
     inline void motionStop()  { motorRunning = false; DBG_PRINTLN("[Motor] Motion Stopped! ⏹️"); motionStopMs  = millis(); }
 
     // Keep your public task handles & result (used elsewhere)
@@ -95,9 +95,3 @@ public:
 };
 
 #endif // MOTOR_DRIVER_H
-
-
-
-
-
-
