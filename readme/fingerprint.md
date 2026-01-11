@@ -66,3 +66,6 @@ This document describes how the fingerprint subsystem is wired, how commands/eve
 - No local unlock: FP match only requests unlock from master (no motor action locally).
 - Verify/enroll tasks are mutually exclusive; adopt/release stops all FP tasks before changing passwords.
 - Tamper/no-sensor conditions are throttled to avoid spamming.
+
+## Related CommandAPI updates
+- Shock internal probe failures return `ACK_SHOCK_INT_MISSING (0xD9)`; see `readme/device.md` and `readme/transport.md`.

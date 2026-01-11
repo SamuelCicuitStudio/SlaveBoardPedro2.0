@@ -620,7 +620,7 @@ These are here to make firmware changes straightforward and unambiguous.
 - **Door open/closed**: `SwitchManager::isDoorOpen()` (backed by a fast IRQ on `REED_SWITCH_PIN` plus polling) read via `Device::isDoorOpen_()`. When `hasReed_==false`, the effective door is treated as **always closed** for breach/shock logic.
 - **Open button (Lock role only)**: `SwitchManager::isOpenButtonPressed()` (backed by a fast IRQ on `OPEN_SWITCH_PIN` plus polling) read from `Device::pollInputsAndEdges_()`. A **single rising edge per physical press** is used to drive behavior. When Paired and allowed by battery policy, this rising edge generates `OpenRequest` (Switch/Reed op=0x02) and `UnlockRequest` (Device op=0x0E); in Unpaired/Good-battery bench mode it drives a **local unlock task only** (pairing traffic still active; no normal events).
 - **User/Boot button taps**: `SwitchManager::handleBootTapHold_()` detects taps on `USER_BUTTON_PIN`. A **single tap** prints the MAC to serial; a **triple tap** toggles RGB LED feedback off/on.
-- **Shock sensor**: `ShockSensor::isTriggered()` uses `SHOCK_SENSOR1_PIN` for interrupts and selects **external GPIO** or **internal LIS2DHTR** via `SHOCK_SENSOR_TYPE_KEY`. LIS2DHTR config is stored in `SHOCK_L2D_*` keys and applied at boot and when updated. In **Unpaired** bench mode it still detects shocks and logs/overlays locally but emits **no normal transport events** (pairing traffic only). In **Paired** mode, every trigger emits a Shock Trigger event, and raising `AlarmRequest(reason=shock)` is additionally gated by `effectiveArmed==true` (Config Mode still sends Shock Trigger only). The LIS2DHTR and MAX17055 share the I2C bus; `I2CBusManager` mediates bus init/reset so one device doesn't reset the other.
+- **Shock sensor**: `ShockSensor::isTriggered()` uses `SHOCK_SENSOR1_PIN` for interrupts and selects **external GPIO** or **internal LIS2DHTR** via `SHOCK_SENSOR_TYPE_KEY`. LIS2DHTR config is stored in `SHOCK_L2D_*` keys and applied at boot and when updated. In **Unpaired** bench mode it still detects shocks and logs/overlays locally but emits **no normal transport events** (pairing traffic only). In **Paired** mode, every trigger emits a Shock Trigger event, and raising `AlarmRequest(reason=shock)` is additionally gated by `effectiveArmed==true` (Config Mode still sends Shock Trigger only). The LIS2DHTR and MAX17055 share the I2C bus; `I2CBusManager` mediates bus init/reset so one device doesn't reset the other. When switching to internal, the slave probes the LIS2DHTR; if it is missing, it falls back to external and returns `ACK_SHOCK_INT_MISSING (0xD9)`. On success, the slave sets `HAS_SHOCK_SENSOR_KEY=true` automatically.
 - **Breach flag**: `EspNowManager::breach` (`Now->breach`) is the single source of truth: `0` = no breach, `1` = active breach. `Breach(set/clear)` events and the `breach` field in the state struct must mirror this flag.
 - **Battery bands**: `PowerManager::getPowerMode()` vs `CRITICAL_POWER_MODE` and `%` from `PowerManager::getBatteryPercentage()`. `Low` is defined as `< LOW_BATTERY_PCT` while not critical; `Critical` is `powerMode == CRITICAL_POWER_MODE`.
 - **Battery policy enforcement**: `Device::enforcePowerPolicy_()` is the only place that:
@@ -664,7 +664,7 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 ## Command handling (via transport)
 - Device: config mode, arm/disarm, reboot, caps set/query, pairing init/status, state/heartbeat/ping, cancel timers, set role, limited NVS bool writes (armed bit, HAS_* presence flags, and `LOCK_EMAG_KEY` for screw vs electromagnet mode).
 - Motor: lock/unlock/pulse (ignored/stubbed in alarm role).
-- Shock: enable/disable.
+- Shock: enable/disable, sensor type/threshold, LIS2DHTR config. Internal type requests probe the LIS2DHTR; on failure it returns `ACK_SHOCK_INT_MISSING (0xD9)` and reverts to external. On success, it sets `HAS_SHOCK_SENSOR_KEY=true` automatically.
 - Fingerprint: verify on/off, enroll/delete/clear, query DB/next ID, adopt/release (only if FP present and lock role).
 
 ## Event/reporting
@@ -766,6 +766,9 @@ This document describes how the fingerprint subsystem is wired, how commands/eve
 - No local unlock: FP match only requests unlock from master (no motor action locally).
 - Verify/enroll tasks are mutually exclusive; adopt/release stops all FP tasks before changing passwords.
 - Tamper/no-sensor conditions are throttled to avoid spamming.
+
+## Related CommandAPI updates
+- Shock internal probe failures return `ACK_SHOCK_INT_MISSING (0xD9)`; see `readme/device.md` and `readme/transport.md`.
 
 ---
 
@@ -972,6 +975,9 @@ marked pending (retain-on-fail). The slave must ACK with these codes:
 - `CMD_LOCK_EMAG_OFF (0x2A)` -> `ACK_LOCK_EMAG_OFF (0xA9)`
 - Capability set commands (0x20..0x27) -> `ACK_CAP_SET (0xAD)`
 - `CMD_CAPS_QUERY (0x28)` -> `ACK_CAPS (0xAE)`
+- Shock config commands should ACK: `ACK_SHOCK_SENSOR_TYPE_SET`,
+  `ACK_SHOCK_SENS_THRESHOLD_SET`, `ACK_SHOCK_L2D_CFG_SET`, and
+  `ACK_SHOCK_INT_MISSING` when internal probe fails.
 
 ### ACKs that clear pending (even on error)
 When a pending command is active, the master clears it if any of these arrive:
@@ -993,6 +999,7 @@ the master reports failure and keeps the slot and peer intact.
 - Explicit list: 0x90..0x96, 0x9A..0x9F, 0xA0..0xA9, 0xAA, 0xAB, 0xAD,
   0xAE, 0xAF, 0xB8, 0xBA, 0xBB, 0xBC, 0xBF.
 - Fingerprint ranges: 0xC2..0xC9, 0xCA..0xCF, 0xD0..0xD5.
+- Shock config ACKs: 0xD6..0xD9.
 
 Any ACK updates comm stats and is passed to NowCore and NowTransport.
 
@@ -1261,6 +1268,9 @@ Capability bits: bit0=OpenSwitch, bit1=Shock, bit2=Reed, bit3=Fingerprint.
 - 0x01 Enable (Req/Cmd). Resp: status.
 - 0x02 Disable (Req/Cmd). Resp: status.
 - 0x03 Trigger (Event). Payload: none.
+- 0x10 SetSensorType (Req/Cmd). Payload: type(u8: 0=external,1=internal). Resp: status (optional reason byte; 0x01=internal sensor missing).
+- 0x11 SetThreshold (Req/Cmd). Payload: ths(u8, 0..127). Resp: status.
+- 0x12 SetL2dCfg (Req/Cmd). Payload: odr,scale,res,evt,dur,axis,hpf_mode,hpf_cut,hpf_en,latch,int_lvl (axis bits: 0=XL,1=XH,2=YL,3=YH,4=ZL,5=ZH). Resp: status.
 
 ### Module 0x04 Switch/Reed
 - 0x01 DoorEdge (Event). Payload: doorOpen(u8: 1=open,0=closed).
@@ -1328,7 +1338,7 @@ Capability bits: bit0=OpenSwitch, bit1=Shock, bit2=Reed, bit3=Fingerprint.
 - RX path:
   - Parsed CommandMessage -> transport Requests: config mode, arm/disarm, reboot/reset,
     caps set/query, set role, cancel timers, pairing init/status, motor lock/unlock/diag,
-    shock enable/disable, all FP commands (verify on/off, enroll/delete/clear, query DB,
+    shock enable/disable, shock sensor type/threshold/LIS2DHTR config (internal missing -> `ACK_SHOCK_INT_MISSING`), all FP commands (verify on/off, enroll/delete/clear, query DB,
     next ID, adopt/release).
   - Edge-handled (immediate ResponseMessage on ESP-NOW, no transport mutation):
     `CMD_STATE_QUERY` -> `ACK_STATE` (payload `AckStatePayload`),

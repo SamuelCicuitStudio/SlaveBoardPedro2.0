@@ -244,6 +244,7 @@ struct PairInit {                        // Frame layout used to start pairing/h
 #define ACK_SHOCK_SENSOR_TYPE_SET      0xD6  // Shock sensor type updated
 #define ACK_SHOCK_SENS_THRESHOLD_SET   0xD7  // Shock sensitivity threshold updated
 #define ACK_SHOCK_L2D_CFG_SET          0xD8  // LIS2DHTR config updated
+#define ACK_SHOCK_INT_MISSING          0xD9  // Internal LIS2DHTR not detected
 
 // ---------------------- General State / Error Replies -----------------------
 

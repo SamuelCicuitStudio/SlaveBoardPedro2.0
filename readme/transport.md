@@ -72,7 +72,7 @@ Capability bits: bit0=OpenSwitch, bit1=Shock, bit2=Reed, bit3=Fingerprint.
 - 0x01 Enable (Req/Cmd). Resp: status.
 - 0x02 Disable (Req/Cmd). Resp: status.
 - 0x03 Trigger (Event). Payload: none.
-- 0x10 SetSensorType (Req/Cmd). Payload: type(u8: 0=external,1=internal). Resp: status.
+- 0x10 SetSensorType (Req/Cmd). Payload: type(u8: 0=external,1=internal). Resp: status (optional reason byte; 0x01=internal sensor missing).
 - 0x11 SetThreshold (Req/Cmd). Payload: ths(u8, 0..127). Resp: status.
 - 0x12 SetL2dCfg (Req/Cmd). Payload: odr,scale,res,evt,dur,axis,hpf_mode,hpf_cut,hpf_en,latch,int_lvl (axis bits: 0=XL,1=XH,2=YL,3=YH,4=ZL,5=ZH). Resp: status.
 
@@ -142,7 +142,7 @@ Capability bits: bit0=OpenSwitch, bit1=Shock, bit2=Reed, bit3=Fingerprint.
 - RX path:
   - Parsed CommandMessage -> transport Requests: config mode, arm/disarm, reboot/reset,
     caps set/query, set role, cancel timers, pairing init/status, motor lock/unlock/diag,
-    shock enable/disable, shock sensor type/threshold/LIS2DHTR config, all FP commands (verify on/off, enroll/delete/clear, query DB,
+    shock enable/disable, shock sensor type/threshold/LIS2DHTR config (internal missing -> `ACK_SHOCK_INT_MISSING`), all FP commands (verify on/off, enroll/delete/clear, query DB,
     next ID, adopt/release).
   - Edge-handled (immediate ResponseMessage on ESP-NOW, no transport mutation):
     `CMD_STATE_QUERY` -> `ACK_STATE` (payload `AckStatePayload`),

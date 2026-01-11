@@ -24,7 +24,7 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 ## Command handling (via transport)
 - Device: config mode, arm/disarm, reboot, caps set/query, pairing init/status, state/heartbeat/ping, cancel timers, set role, limited NVS bool writes (armed bit, HAS_* presence flags, and `LOCK_EMAG_KEY` for screw vs electromagnet mode).
 - Motor: lock/unlock/pulse (ignored/stubbed in alarm role).
-- Shock: enable/disable, sensor type/threshold, LIS2DHTR config.
+- Shock: enable/disable, sensor type/threshold, LIS2DHTR config. Internal type requests probe the LIS2DHTR; on failure it returns `ACK_SHOCK_INT_MISSING (0xD9)` and reverts to external. On success, it sets `HAS_SHOCK_SENSOR_KEY=true` automatically.
 - Fingerprint: verify on/off, enroll/delete/clear, query DB/next ID, adopt/release (only if FP present and lock role).
 
 ## Event/reporting

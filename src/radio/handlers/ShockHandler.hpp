@@ -27,6 +27,9 @@ public:
 private:
   void sendStatus_(const transport::TransportMessage& req,
                    transport::StatusCode status);
+  void sendStatus_(const transport::TransportMessage& req,
+                   transport::StatusCode status,
+                   const std::vector<uint8_t>& extra);
 
   NVS* nvs_;
   transport::TransportPort* port_;

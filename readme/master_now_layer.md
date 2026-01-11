@@ -199,6 +199,9 @@ marked pending (retain-on-fail). The slave must ACK with these codes:
 - `CMD_LOCK_EMAG_OFF (0x2A)` -> `ACK_LOCK_EMAG_OFF (0xA9)`
 - Capability set commands (0x20..0x27) -> `ACK_CAP_SET (0xAD)`
 - `CMD_CAPS_QUERY (0x28)` -> `ACK_CAPS (0xAE)`
+- Shock config commands should ACK: `ACK_SHOCK_SENSOR_TYPE_SET`,
+  `ACK_SHOCK_SENS_THRESHOLD_SET`, `ACK_SHOCK_L2D_CFG_SET`, and
+  `ACK_SHOCK_INT_MISSING` when internal probe fails.
 
 ### ACKs that clear pending (even on error)
 When a pending command is active, the master clears it if any of these arrive:
@@ -220,6 +223,7 @@ the master reports failure and keeps the slot and peer intact.
 - Explicit list: 0x90..0x96, 0x9A..0x9F, 0xA0..0xA9, 0xAA, 0xAB, 0xAD,
   0xAE, 0xAF, 0xB8, 0xBA, 0xBB, 0xBC, 0xBF.
 - Fingerprint ranges: 0xC2..0xC9, 0xCA..0xCF, 0xD0..0xD5.
+- Shock config ACKs: 0xD6..0xD9.
 
 Any ACK updates comm stats and is passed to NowCore and NowTransport.
 

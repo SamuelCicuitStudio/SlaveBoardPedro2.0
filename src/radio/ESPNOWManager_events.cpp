@@ -169,6 +169,10 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
       return true;
     }
     if (op == 0x10) {
+      if (!statusOk && pl.size() >= 2 && pl[1] == 0x01) {
+        sendRespNoPayload(ACK_SHOCK_INT_MISSING, false);
+        return true;
+      }
       sendRespNoPayload(ACK_SHOCK_SENSOR_TYPE_SET, statusOk);
       return true;
     }

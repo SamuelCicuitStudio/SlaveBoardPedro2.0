@@ -14,6 +14,7 @@
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 #include <Utils.hpp>
+
 #define MOTOR_SETTLE_MS 800   // ignore shock while motor runs + this many ms after stop
 
 // ----------------------------------------------------------------------

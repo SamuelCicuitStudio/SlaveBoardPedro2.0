@@ -9,6 +9,7 @@ static constexpr uint8_t SHOCK_DISABLE = 0x02;
 static constexpr uint8_t SHOCK_SET_TYPE = 0x10;
 static constexpr uint8_t SHOCK_SET_THS  = 0x11;
 static constexpr uint8_t SHOCK_SET_L2D  = 0x12;
+static constexpr uint8_t SHOCK_REASON_INT_MISSING = 0x01;
 
 void ShockHandler::onMessage(const transport::TransportMessage& msg) {
   if (!nvs_) { sendStatus_(msg, transport::StatusCode::DENIED); return; }
@@ -45,6 +46,34 @@ void ShockHandler::onMessage(const transport::TransportMessage& msg) {
         sendStatus_(msg, transport::StatusCode::INVALID_PARAM);
         break;
       }
+      if (type == SHOCK_SENSOR_TYPE_INTERNAL) {
+        if (!sensor_) {
+          nvs_->PutInt(SHOCK_SENSOR_TYPE_KEY, SHOCK_SENSOR_TYPE_EXTERNAL);
+          sendStatus_(msg,
+                      transport::StatusCode::APPLY_FAIL,
+                      {SHOCK_REASON_INT_MISSING});
+          break;
+        }
+
+        ShockConfig prev = ShockSensor::loadConfig(nvs_);
+        ShockConfig cfg = prev;
+        cfg.type = SHOCK_SENSOR_TYPE_INTERNAL;
+
+        const bool ok = sensor_->applyConfig(cfg);
+        if (ok) {
+          nvs_->PutInt(SHOCK_SENSOR_TYPE_KEY, type);
+          nvs_->PutBool(HAS_SHOCK_SENSOR_KEY, true);
+          sendStatus_(msg, transport::StatusCode::OK);
+        } else {
+          (void)sensor_->applyConfig(prev);
+          nvs_->PutInt(SHOCK_SENSOR_TYPE_KEY, SHOCK_SENSOR_TYPE_EXTERNAL);
+          sendStatus_(msg,
+                      transport::StatusCode::APPLY_FAIL,
+                      {SHOCK_REASON_INT_MISSING});
+        }
+        break;
+      }
+
       nvs_->PutInt(SHOCK_SENSOR_TYPE_KEY, type);
       sendStatus_(msg, applyCfg() ? transport::StatusCode::OK
                                   : transport::StatusCode::APPLY_FAIL);
@@ -104,13 +133,22 @@ void ShockHandler::onMessage(const transport::TransportMessage& msg) {
 
 void ShockHandler::sendStatus_(const transport::TransportMessage& req,
                                transport::StatusCode status) {
+  sendStatus_(req, status, {});
+}
+
+void ShockHandler::sendStatus_(const transport::TransportMessage& req,
+                               transport::StatusCode status,
+                               const std::vector<uint8_t>& extra) {
   transport::TransportMessage resp;
   resp.header = req.header;
   resp.header.srcId  = req.header.destId;
   resp.header.destId = req.header.srcId;
   resp.header.type   = static_cast<uint8_t>(transport::MessageType::Response);
   resp.header.flags  = 0x02;
-  resp.payload = { static_cast<uint8_t>(status) };
+  resp.payload.clear();
+  resp.payload.reserve(1 + extra.size());
+  resp.payload.push_back(static_cast<uint8_t>(status));
+  resp.payload.insert(resp.payload.end(), extra.begin(), extra.end());
   resp.header.payloadLen = static_cast<uint8_t>(resp.payload.size());
   if (port_) port_->send(resp, true);
 }
