@@ -56,6 +56,47 @@
 #define DEFAULT_LAST_TIME_SAVED     1736121600
 
 // ---------------------------
+// Shock sensor configuration
+// ---------------------------
+// Which shock sensor implementation is used on this board.
+// - EXTERNAL: current GPIO-based shock sensor input
+// - INTERNAL: LIS2DHTR over I2C (shares SDA/SCL with MAX17055), INT on SHOCK_SENSOR1_PIN
+#define SHOCK_SENSOR_TYPE_KEY         "SHTYP"  // int : 0=external, 1=internal
+#define SHOCK_SENSOR_TYPE_EXTERNAL    0
+#define SHOCK_SENSOR_TYPE_INTERNAL    1
+#define SHOCK_SENSOR_TYPE_DEFAULT     SHOCK_SENSOR_TYPE_EXTERNAL
+
+// Sensitivity threshold used by the selected shock sensor implementation
+// (units depend on the sensor/driver; interpreted later when integration is added).
+#define SHOCK_SENS_THRESHOLD_KEY      "SHTHR"  // int : sensitivity threshold
+#define SHOCK_SENS_THRESHOLD_DEFAULT  16
+
+// LIS2DHTR (internal shock) configuration defaults.
+// Values map to l2d_* enums and register fields (see src/sensors/l2d_types.h).
+#define SHOCK_L2D_ODR_KEY             "SHODR"  // int : l2d_odr_t (0..9)
+#define SHOCK_L2D_ODR_DEFAULT         5        // L2D_ODR_100
+#define SHOCK_L2D_SCALE_KEY           "SHSCL"  // int : l2d_scale_t (0..3)
+#define SHOCK_L2D_SCALE_DEFAULT       0        // L2D_SCALE_2G
+#define SHOCK_L2D_RES_KEY             "SHRES"  // int : l2d_res_t (0..2)
+#define SHOCK_L2D_RES_DEFAULT         2        // L2D_RES_H
+#define SHOCK_L2D_EVT_MODE_KEY        "SHEVT"  // int : l2d_evt_mode_t (0..5)
+#define SHOCK_L2D_EVT_MODE_DEFAULT    0        // L2D_EVT_WAKE
+#define SHOCK_L2D_DUR_KEY             "SHDUR"  // int : INT1 duration (0..127)
+#define SHOCK_L2D_DUR_DEFAULT         2
+#define SHOCK_L2D_AXIS_KEY            "SHAX"   // int : axis mask (bit0=XL,1=XH,2=YL,3=YH,4=ZL,5=ZH)
+#define SHOCK_L2D_AXIS_DEFAULT        0x2A     // XH|YH|ZH
+#define SHOCK_L2D_HPF_MODE_KEY        "SHHPM"  // int : l2d_hpf_t (0..3)
+#define SHOCK_L2D_HPF_MODE_DEFAULT    0        // L2D_HPF_NORM
+#define SHOCK_L2D_HPF_CUT_KEY         "SHHPC"  // int : HPF cutoff (0..3)
+#define SHOCK_L2D_HPF_CUT_DEFAULT     0
+#define SHOCK_L2D_HPF_EN_KEY          "SHHPE"  // bool: enable HPF on INT1
+#define SHOCK_L2D_HPF_EN_DEFAULT      true
+#define SHOCK_L2D_LATCH_KEY           "SHLAT"  // bool: latch INT1
+#define SHOCK_L2D_LATCH_DEFAULT       true
+#define SHOCK_L2D_INT_LVL_KEY         "SHILV"  // int : 0=active high, 1=active low
+#define SHOCK_L2D_INT_LVL_DEFAULT     1
+
+// ---------------------------
 // Lock driver configuration
 // ---------------------------
 // Defines how the physical actuator is driven on this Slave.
@@ -106,6 +147,20 @@
   NVS_KEYLEN_OK(MOTION_TRIG_ALARM);
   NVS_KEYLEN_OK(CURRENT_TIME_SAVED);
   NVS_KEYLEN_OK(LAST_TIME_SAVED);
+
+  NVS_KEYLEN_OK(SHOCK_SENSOR_TYPE_KEY);
+  NVS_KEYLEN_OK(SHOCK_SENS_THRESHOLD_KEY);
+  NVS_KEYLEN_OK(SHOCK_L2D_ODR_KEY);
+  NVS_KEYLEN_OK(SHOCK_L2D_SCALE_KEY);
+  NVS_KEYLEN_OK(SHOCK_L2D_RES_KEY);
+  NVS_KEYLEN_OK(SHOCK_L2D_EVT_MODE_KEY);
+  NVS_KEYLEN_OK(SHOCK_L2D_DUR_KEY);
+  NVS_KEYLEN_OK(SHOCK_L2D_AXIS_KEY);
+  NVS_KEYLEN_OK(SHOCK_L2D_HPF_MODE_KEY);
+  NVS_KEYLEN_OK(SHOCK_L2D_HPF_CUT_KEY);
+  NVS_KEYLEN_OK(SHOCK_L2D_HPF_EN_KEY);
+  NVS_KEYLEN_OK(SHOCK_L2D_LATCH_KEY);
+  NVS_KEYLEN_OK(SHOCK_L2D_INT_LVL_KEY);
 
   NVS_KEYLEN_OK(LOCK_TIMEOUT_KEY);
   NVS_KEYLEN_OK(LOCK_EMAG_KEY);

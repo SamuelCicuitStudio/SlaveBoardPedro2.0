@@ -310,6 +310,41 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
     dispatchTransport(Module::Shock, /*op*/0x02, {}, "MOTION_DISABLE");
     return;
   }
+  if (opcode == CMD_SET_SHOCK_SENSOR_TYPE) {
+    if (!payload || payloadLen < 1) {
+      DBG_PRINTLN("[ESPNOW][CMD] SET_SHOCK_SENSOR_TYPE -> missing payload");
+      SendAck(ACK_UNINTENDED, false);
+      return;
+    }
+    uint8_t type = payload[0];
+    DBG_PRINTF("[ESPNOW][CMD] SET_SHOCK_SENSOR_TYPE -> type=%u\n",
+               static_cast<unsigned>(type));
+    dispatchTransport(Module::Shock, /*op*/0x10, {type}, "SHOCK_TYPE");
+    return;
+  }
+  if (opcode == CMD_SET_SHOCK_SENS_THRESHOLD) {
+    if (!payload || payloadLen < 1) {
+      DBG_PRINTLN("[ESPNOW][CMD] SET_SHOCK_SENS_THRESHOLD -> missing payload");
+      SendAck(ACK_UNINTENDED, false);
+      return;
+    }
+    uint8_t ths = payload[0];
+    DBG_PRINTF("[ESPNOW][CMD] SET_SHOCK_SENS_THRESHOLD -> ths=%u\n",
+               static_cast<unsigned>(ths));
+    dispatchTransport(Module::Shock, /*op*/0x11, {ths}, "SHOCK_THS");
+    return;
+  }
+  if (opcode == CMD_SET_SHOCK_L2D_CFG) {
+    if (!payload || payloadLen < 11) {
+      DBG_PRINTLN("[ESPNOW][CMD] SET_SHOCK_L2D_CFG -> missing payload");
+      SendAck(ACK_UNINTENDED, false);
+      return;
+    }
+    std::vector<uint8_t> cfg(payload, payload + 11);
+    DBG_PRINTLN("[ESPNOW][CMD] SET_SHOCK_L2D_CFG -> apply");
+    dispatchTransport(Module::Shock, /*op*/0x12, cfg, "SHOCK_L2D_CFG");
+    return;
+  }
   if (opcode == CMD_ENTER_TEST_MODE) {
     DBG_PRINTLN("[ESPNOW][CMD] ENTER_TEST_MODE -> Device SetConfigMode (op=0x01)");
     setConfigMode(true);

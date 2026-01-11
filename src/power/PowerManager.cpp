@@ -1,5 +1,6 @@
 #include <PowerManager.hpp>
 #include <Config.hpp>
+#include <I2CBusManager.hpp>
 #include <Logger.hpp>
 #include <RGBLed.hpp>
 #include <Utils.hpp>
@@ -58,6 +59,10 @@ void PowerManager::attachWire(TwoWire* wirePort) {
 
 namespace {
     inline uint32_t ms() { return millis(); }
+    bool reinitGaugeCb_(void* ctx) {
+        auto* self = static_cast<PowerManager*>(ctx);
+        return self ? self->reinitI2C() : false;
+    }
 }
 
 PowerManager::PowerManager(TwoWire* wirePort)
@@ -79,6 +84,24 @@ PowerManager::PowerManager(TwoWire* wirePort)
     battInfoValid_      = false;
 
     lastFastTickMs_ = lastEvalMs_ = ms();
+}
+
+bool PowerManager::reinitI2C() {
+    return initGauge_(false);
+}
+
+bool PowerManager::initGauge_(bool initBus) {
+    MAX17055::Config cfg;
+    cfg.designCap_mAh = 3000;
+    cfg.iChgTerm_mA   = 100;
+    cfg.vEmpty_mV     = 3200;
+    cfg.i2cHz         = 100000;
+
+    return gauge_.beginOnBus(MAX17055_SDA_PIN,
+                             MAX17055_SCL_PIN,
+                             cfg,
+                             MAX17055_SENSE_RES_MILLIOHM,
+                             initBus);
 }
 
 void PowerManager::begin() {
@@ -127,12 +150,11 @@ void PowerManager::begin() {
     // Allow stale cached reads when gauge goes offline
     gauge_.setStaleReadPolicy(true);
 
-    bool ok = gauge_.begin(
-        MAX17055_SDA_PIN,
-        MAX17055_SCL_PIN,
-        cfg,
-        MAX17055_SENSE_RES_MILLIOHM
-    );
+    I2CBusManager& bus = I2CBusManager::Get();
+    bus.registerClient("MAX17055", reinitGaugeCb_, this);
+    bus.ensureStarted(MAX17055_SDA_PIN, MAX17055_SCL_PIN, cfg.i2cHz);
+
+    bool ok = initGauge_(false);
 
     if (!ok) {
         DBG_PRINTLN("[POWER] MAX17055 begin() FAILED – will use cached values when available.");

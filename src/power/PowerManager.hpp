@@ -20,7 +20,7 @@
 #define POWER_FAST_TICK_MS 250      // fast gauge heartbeat (ms)
 #endif
 #ifndef POWER_MODE_UPDATE
-#define POWER_MODE_UPDATE  10000    // power-mode evaluation period (ms)
+#define POWER_MODE_UPDATE  30000    // power-mode evaluation period (ms)
 #endif
 // Testing: force reported SOC (%) and disable gauge I2C. Set to 0 to disable.
 #ifndef POWER_CLAMP_SOC_PERCENT
@@ -71,6 +71,7 @@ public:
     void fastTick();           // just drives gauge_.tick() + online state
     bool evalIfDue();          // run updatePowerMode() if due; returns true if ran
     void forceEvaluate();      // always run updatePowerMode() now
+    bool reinitI2C();
 
     // Data access
     float     getBatteryPercentage();   // SOC (%) from MAX17055; uses stale if allowed
@@ -115,6 +116,7 @@ private:
     MAX17055::OnlineState lastOnlineState_ = MAX17055::UNKNOWN;
 
     void updateGaugeOnlineState();
+    bool initGauge_(bool initBus);
 
     // ---- Concurrency: small recursive mutex for our fields (external callers may be multi-task) ----
     mutable SemaphoreHandle_t mtx_ = nullptr;

@@ -24,12 +24,12 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 ## Command handling (via transport)
 - Device: config mode, arm/disarm, reboot, caps set/query, pairing init/status, state/heartbeat/ping, cancel timers, set role, limited NVS bool writes (armed bit, HAS_* presence flags, and `LOCK_EMAG_KEY` for screw vs electromagnet mode).
 - Motor: lock/unlock/pulse (ignored/stubbed in alarm role).
-- Shock: enable/disable.
+- Shock: enable/disable, sensor type/threshold, LIS2DHTR config.
 - Fingerprint: verify on/off, enroll/delete/clear, query DB/next ID, adopt/release (only if FP present and lock role).
 
 ## Event/reporting
 - Door/Reed (hasReed_): DoorEdge + StateReport on edges. MotorDone-style events emitted only in lock role; suppressed in alarm role. ACK_LOCKED/ACK_UNLOCKED still sent for visibility.
-- Shock (hasShock_, motion enabled): Shock Trigger; AlarmRequest(reason=shock) only when armed.
+- Shock (hasShock_, motion enabled; Config Mode always reports): Shock Trigger; AlarmRequest(reason=shock) only when armed.
 - Breach (paired, armed, locked, door open): AlarmRequest(reason=breach) + Breach set/clear; cleared on door close.
 - DriverFar: lock role only, paired+armed+doorOpen+!locked, rate-limited.
 - Open button (lock role, hasOpenSwitch_): OpenRequest + UnlockRequest; no local motor when paired. In critical power, short TX window then sleep.

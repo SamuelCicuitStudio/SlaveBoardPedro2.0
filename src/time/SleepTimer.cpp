@@ -204,21 +204,49 @@ void SleepTimer::goToSleep() {
     }
     DBGSTP();
 
-    // Wake source #2/#3 (EXT1): OPEN button LOW / SHOCK LOW (ALL_LOW)
+    // Wake source #2/#3 (EXT1): OPEN button + SHOCK
     uint64_t ext1Mask = 0ULL;
-    if (hasOpenBtn) {
-        ext1Mask |= BUTTON_PIN_BITMASK(WAKE_UP_GPIO_OPEN_SWITCH);
-        prep_rtc_input_pullup((gpio_num_t)WAKE_UP_GPIO_OPEN_SWITCH);
+    bool useAnyHigh = false;
+    bool shockActiveLow = true;
+    if (deviceConfigured && hasShock && CONF) {
+        const int type =
+            CONF->GetInt(SHOCK_SENSOR_TYPE_KEY, SHOCK_SENSOR_TYPE_DEFAULT);
+        if (type == SHOCK_SENSOR_TYPE_INTERNAL) {
+            const int lvl =
+                CONF->GetInt(SHOCK_L2D_INT_LVL_KEY, SHOCK_L2D_INT_LVL_DEFAULT);
+            shockActiveLow = (lvl != 0);
+        } else {
+            shockActiveLow = true; // external is active-low
+        }
     }
+
     if (deviceConfigured && hasShock) {
         ext1Mask |= BUTTON_PIN_BITMASK(WAKE_UP_GPIO_SHOCK_SENSOR1);
-        prep_rtc_input_pullup((gpio_num_t)WAKE_UP_GPIO_SHOCK_SENSOR1);
+        if (shockActiveLow) {
+            prep_rtc_input_pullup((gpio_num_t)WAKE_UP_GPIO_SHOCK_SENSOR1);
+        } else {
+            useAnyHigh = true;
+            prep_rtc_input_pulldown((gpio_num_t)WAKE_UP_GPIO_SHOCK_SENSOR1);
+        }
+    }
+
+    if (hasOpenBtn) {
+        if (useAnyHigh) {
+            DBG_PRINTLN("[SLEEP] [Wakeup] OPEN button wake skipped (EXT1 ANY_HIGH)");
+        } else {
+            ext1Mask |= BUTTON_PIN_BITMASK(WAKE_UP_GPIO_OPEN_SWITCH);
+            prep_rtc_input_pullup((gpio_num_t)WAKE_UP_GPIO_OPEN_SWITCH);
+        }
     }
 
     DBGSTR();
     if (ext1Mask != 0ULL) {
-        esp_sleep_enable_ext1_wakeup(ext1Mask, ESP_EXT1_WAKEUP_ALL_LOW);
-        if (hasOpenBtn && (deviceConfigured && hasShock)) {
+        esp_sleep_enable_ext1_wakeup(
+            ext1Mask,
+            useAnyHigh ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
+        if (useAnyHigh) {
+            DBG_PRINTLN("[SLEEP] [Wakeup] EXT1 ANY_HIGH on (SHOCK) armed");
+        } else if (hasOpenBtn && (deviceConfigured && hasShock)) {
             DBG_PRINTLN("[SLEEP] [Wakeup] EXT1 ALL_LOW on (OPEN button + SHOCK) armed");
         } else if (hasOpenBtn) {
             DBG_PRINTLN("[SLEEP] [Wakeup] EXT1 ALL_LOW on (OPEN button) armed");

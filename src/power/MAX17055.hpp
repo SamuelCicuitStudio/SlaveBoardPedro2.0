@@ -77,6 +77,7 @@ public:
   // ---------------------------------------------------------------------------
   MAX17055();
   bool begin(int sdaPin, int sclPin, const Config& cfg, float SenseRes);
+  bool beginOnBus(int sdaPin, int sclPin, const Config& cfg, float SenseRes, bool initBus);
 
   // Call this regularly (e.g., every 250 ms) from caller’s task/loop
   void tick();

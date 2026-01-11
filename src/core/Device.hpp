@@ -96,6 +96,7 @@ private:
 
   // ==== Capability snapshot (from Preferences) ====
   void refreshCapabilities_();
+  void updateShockSensor_();
   bool hasOpenSwitch_    = true;
   bool hasShock_         = true;
   bool hasReed_          = true;

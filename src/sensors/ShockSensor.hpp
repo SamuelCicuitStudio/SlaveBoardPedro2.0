@@ -12,6 +12,7 @@
 #include <Arduino.h>
 #include <Config.hpp>
 #include <esp_timer.h>
+#include "l2d.hpp"
 
 /**
  * @file ShockSensor.h
@@ -62,12 +63,37 @@
 #define SHOCK_COOLDOWN_MS 2000
 #endif
 
+class NVS;
+
+struct ShockConfig {
+    uint8_t type;       // 0=external GPIO, 1=internal LIS2DHTR
+    uint8_t threshold;  // LIS2DHTR INT1_THS (0..127)
+    uint8_t odr;        // l2d_odr_t
+    uint8_t scale;      // l2d_scale_t
+    uint8_t res;        // l2d_res_t
+    uint8_t evtMode;    // l2d_evt_mode_t
+    uint8_t dur;        // INT1_DUR (0..127)
+    uint8_t axisMask;   // bit0=XL,1=XH,2=YL,3=YH,4=ZL,5=ZH
+    uint8_t hpfMode;    // l2d_hpf_t
+    uint8_t hpfCut;     // HPF cutoff (0..3)
+    bool    hpfEn;      // enable HPF on INT1
+    bool    latch;      // latch INT1 until INT1_SRC read
+    uint8_t intLevel;   // 0=active high, 1=active low
+};
+
 class ShockSensor {
 public:
     explicit ShockSensor();
-    void begin();
+    bool begin(const ShockConfig& cfg);
+    bool applyConfig(const ShockConfig& cfg);
+    void disable();
+    bool reinitI2C();
     bool isTriggered();   // true exactly once per distinct shock (then cooldown)
     void reset();         // clears "triggered" latch; does NOT force rearm
+    bool isInternal() const { return internal_; }
+
+    static ShockConfig loadConfig(NVS* nvs);
+    static ShockConfig sanitizeConfig(ShockConfig cfg);
 
 private:
     // Singleton-style pointer used by static ISR thunk
@@ -87,6 +113,16 @@ private:
     // ISR helpers for hardware edge capture
     static void IRAM_ATTR isrThunk_();
     void IRAM_ATTR onShockEdge_();
+
+    void detachInterrupt_();
+    void configureExternal_();
+    bool configureInternal_(const ShockConfig& cfg);
+    int interruptMode_(const ShockConfig& cfg) const;
+
+    ShockConfig cfg_{};
+    bool internal_ = false;
+    bool l2dReady_ = false;
+    L2D  l2d_;
 };
 
 #endif // SHOCK_SENSOR_H

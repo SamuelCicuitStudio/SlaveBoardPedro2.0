@@ -38,8 +38,7 @@ void Device::initManagers_() {
   LOGG->Begin();
 
   // Power / fuel gauge
-  auto fuelWire = new TwoWire(2);
-  PowerManager::Init(fuelWire);
+  PowerManager::Init();
   PowerMgr = POWERMGR;
   if (!PowerMgr) return;
   PowerMgr->begin();
@@ -56,7 +55,6 @@ void Device::initManagers_() {
   if (Sw) Sw->begin();
 
   shockSensor = new ShockSensor();
-  if (shockSensor) shockSensor->begin();
 
   SleepTimer::Init(RTC, PowerMgr);
   sleepTimer = SleepTimer::Get();
@@ -118,7 +116,7 @@ void Device::initManagers_() {
       if (stub) Transport->port().registerHandler(transport::Module::Motor, stub);
     }
     // Shock handler
-    ShockH = new ShockHandler(CONF, &Transport->port());
+    ShockH = new ShockHandler(CONF, &Transport->port(), shockSensor);
     if (ShockH) {
       Transport->port().registerHandler(transport::Module::Shock, ShockH);
     }

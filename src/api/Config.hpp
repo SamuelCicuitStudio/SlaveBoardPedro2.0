@@ -83,7 +83,9 @@
 
 #define SLEEP_TIMER             240000        // ms before app puts device to sleep
 #define TIMER_WAKUP             60000000      // us for esp_sleep timer wakeup (if used)
+#ifndef POWER_MODE_UPDATE
 #define POWER_MODE_UPDATE       30000       // ms between power mode eval (30)
+#endif
 
 // ============================================================================
 //  Hardware Pin Map (grouped by function for quick audits)
@@ -111,6 +113,13 @@
 // ---------------------------
 #define SHOCK_SENSOR1_PIN               12
 #define WAKE_UP_GPIO_SHOCK_SENSOR1      GPIO_NUM_12
+
+// Internal shock sensor (LIS2DHTR) pin map
+// - SDA/SCL share the same I2C bus as the MAX17055 fuel gauge
+// - INT uses the same GPIO as the external shock sensor input
+#define LIS2DHTR_SDA_PIN                MAX17055_SDA_PIN
+#define LIS2DHTR_SCL_PIN                MAX17055_SCL_PIN
+#define LIS2DHTR_INT_PIN                SHOCK_SENSOR1_PIN
 
 // ---------------------------
 // Mechanical end-of-travel (screw lock only)

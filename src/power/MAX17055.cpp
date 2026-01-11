@@ -17,15 +17,27 @@ MAX17055::MAX17055() {
 // Public: begin / tick
 // -----------------------------------------------------------------------------
 bool MAX17055::begin(int sdaPin, int sclPin, const Config& cfg, float SenseRes) {
+  return beginOnBus(sdaPin, sclPin, cfg, SenseRes, true);
+}
+
+bool MAX17055::beginOnBus(int sdaPin,
+                          int sclPin,
+                          const Config& cfg,
+                          float SenseRes,
+                          bool initBus) {
   // Configure instance
-  _Sense_Resistor = SenseRes / 1000.0f; // user passes mΩ → convert to Ω
+  _Sense_Resistor = SenseRes / 1000.0f; // user passes mIc - convert to Ic
   cfg_            = cfg;
   last_err_       = OK;
   sdaPin_         = sdaPin;
   sclPin_         = sclPin;
 
-  // Init I2C bus
-  Wire.begin(sdaPin_, sclPin_, cfg_.i2cHz);
+  // Init I2C bus if requested
+  if (initBus) {
+    Wire.begin(sdaPin_, sclPin_, cfg_.i2cHz);
+  } else {
+    Wire.setClock(cfg_.i2cHz);
+  }
   Wire.setTimeOut(50);
 
   // Basic configuration (each I2C op is self-contained)

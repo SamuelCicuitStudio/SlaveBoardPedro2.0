@@ -3,6 +3,7 @@
 #include <ESPNOWManager.hpp>
 #include <NVSManager.hpp>
 #include <RGBLed.hpp>
+#include <ShockSensor.hpp>
 #include <Utils.hpp>
 
 // =========================
@@ -22,6 +23,18 @@ void Device::refreshCapabilities_() {
     hasShock_         = true;
     hasReed_          = true;
   }
+
+  updateShockSensor_();
+}
+
+void Device::updateShockSensor_() {
+  if (!shockSensor) return;
+  if (!hasShock_) {
+    shockSensor->disable();
+    return;
+  }
+  ShockConfig cfg = ShockSensor::loadConfig(CONF);
+  shockSensor->applyConfig(cfg);
 }
 
 // =========================

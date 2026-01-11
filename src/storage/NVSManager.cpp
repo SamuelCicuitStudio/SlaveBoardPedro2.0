@@ -205,6 +205,24 @@ void NVS::initializeVariables() {
 
     //
     // -------------------------------------------------
+    // Shock sensor configuration
+    // -------------------------------------------------
+    PutInt(SHOCK_SENSOR_TYPE_KEY,    SHOCK_SENSOR_TYPE_DEFAULT);
+    PutInt(SHOCK_SENS_THRESHOLD_KEY, SHOCK_SENS_THRESHOLD_DEFAULT);
+    PutInt (SHOCK_L2D_ODR_KEY,       SHOCK_L2D_ODR_DEFAULT);
+    PutInt (SHOCK_L2D_SCALE_KEY,     SHOCK_L2D_SCALE_DEFAULT);
+    PutInt (SHOCK_L2D_RES_KEY,       SHOCK_L2D_RES_DEFAULT);
+    PutInt (SHOCK_L2D_EVT_MODE_KEY,  SHOCK_L2D_EVT_MODE_DEFAULT);
+    PutInt (SHOCK_L2D_DUR_KEY,       SHOCK_L2D_DUR_DEFAULT);
+    PutInt (SHOCK_L2D_AXIS_KEY,      SHOCK_L2D_AXIS_DEFAULT);
+    PutInt (SHOCK_L2D_HPF_MODE_KEY,  SHOCK_L2D_HPF_MODE_DEFAULT);
+    PutInt (SHOCK_L2D_HPF_CUT_KEY,   SHOCK_L2D_HPF_CUT_DEFAULT);
+    PutBool(SHOCK_L2D_HPF_EN_KEY,    SHOCK_L2D_HPF_EN_DEFAULT);
+    PutBool(SHOCK_L2D_LATCH_KEY,     SHOCK_L2D_LATCH_DEFAULT);
+    PutInt (SHOCK_L2D_INT_LVL_KEY,   SHOCK_L2D_INT_LVL_DEFAULT);
+
+    //
+    // -------------------------------------------------
     // Lock driver configuration
     // -------------------------------------------------
     // false = screw motor lock (endstop switches)

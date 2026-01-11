@@ -341,7 +341,7 @@ This document teaches a developer how to **reason about and describe** the devic
 - **Reporting in Config Mode**
 
   - **Reed**: report `DoorOpen` / `DoorClosed` edges.
-  - **Shock/Motion**: report **shock trigger** events for visibility (only when motion is enabled).
+  - **Shock/Motion**: report **shock trigger** events for visibility (always in Config Mode; motion enable is ignored).
   - **Never raise breach** and **never raise AlarmRequest** in Config Mode.
   - State/heartbeat/ping/caps queries/caps set work normally.
 
@@ -404,9 +404,9 @@ This document teaches a developer how to **reason about and describe** the devic
 - **Door/Reed**: emit `DoorOpen` / `DoorClosed` edges and include door state in `StateReport`.
 - **Shock/Motion**:
 
-  - **Motion enabled** (`CMD_ENABLE_MOTION`) gates all shock events.
+- **Motion enabled** (`CMD_ENABLE_MOTION`) gates all shock events **except** in Config Mode (shock triggers are always reported there).
   - **Armed** (and not in Config Mode) + motion enabled: emit **Shock Trigger** **and** raise `AlarmRequest(reason=shock)`.
-  - **Disarmed or Config Mode** + motion enabled: emit **Shock Trigger only** (no `AlarmRequest`).
+  - **Disarmed** (motion enabled) or **Config Mode** (always): emit **Shock Trigger only** (no `AlarmRequest`).
 
 - **StateReport**: include at minimum
   `role`, `armed`, `door`, `breach`, `batt_level`, `power_band`, `configMode`, `shock_enabled`
@@ -437,6 +437,7 @@ This document teaches a developer how to **reason about and describe** the devic
 - **Device/system**: pairing init/status (`CMD_CONFIG_STATUS`), battery level (`CMD_BATTERY_LEVEL`), arm/disarm, reboot, enter config mode, caps set/query, state/heartbeat/ping, sync, cancel timers, set role, test mode (`CMD_ENTER_TEST_MODE`), remove/unpair (`CMD_REMOVE_SLAVE`), factory reset (`CMD_FACTORY_RESET`), whitelisted NVS bool writes.
 - **Alarm control**: `CMD_CLEAR_ALARM` clears alarm/breach state (`ACK_ALARM_CLEARED` / `EVT_ALARM_CLEARED`).
 - **Motion trigger**: `CMD_ENABLE_MOTION` / `CMD_DISABLE_MOTION` (separate from arm/disarm).
+- **Shock config**: `CMD_SET_SHOCK_SENSOR_TYPE`, `CMD_SET_SHOCK_SENS_THRESHOLD`, `CMD_SET_SHOCK_L2D_CFG`.
 - **Motor (Lock role only)**: lock/unlock (`CMD_LOCK_SCREW` / `CMD_UNLOCK_SCREW`), force lock/unlock; subject to **battery policy** (disabled at Low/Critical).
 - **Lock driver mode (Lock role only)**: `CMD_LOCK_EMAG_ON` / `CMD_LOCK_EMAG_OFF`.
 - **Capabilities**: `CMD_CAP_*` toggles (open/shock/reed/fp) and `CMD_CAPS_QUERY` bitmap.
@@ -619,7 +620,7 @@ These are here to make firmware changes straightforward and unambiguous.
 - **Door open/closed**: `SwitchManager::isDoorOpen()` (backed by a fast IRQ on `REED_SWITCH_PIN` plus polling) read via `Device::isDoorOpen_()`. When `hasReed_==false`, the effective door is treated as **always closed** for breach/shock logic.
 - **Open button (Lock role only)**: `SwitchManager::isOpenButtonPressed()` (backed by a fast IRQ on `OPEN_SWITCH_PIN` plus polling) read from `Device::pollInputsAndEdges_()`. A **single rising edge per physical press** is used to drive behavior. When Paired and allowed by battery policy, this rising edge generates `OpenRequest` (Switch/Reed op=0x02) and `UnlockRequest` (Device op=0x0E); in Unpaired/Good-battery bench mode it drives a **local unlock task only** (pairing traffic still active; no normal events).
 - **User/Boot button taps**: `SwitchManager::handleBootTapHold_()` detects taps on `USER_BUTTON_PIN`. A **single tap** prints the MAC to serial; a **triple tap** toggles RGB LED feedback off/on.
-- **Shock sensor**: `ShockSensor::isTriggered()` now uses a hardware interrupt on `SHOCK_SENSOR1_PIN` to latch fast edges and is read via `Device::shockSensor` when `hasShock_==true` and `motorMoving==false`. In **Unpaired** bench mode it still detects shocks and logs/overlays locally but emits **no normal transport events** (pairing traffic only). In **Paired** mode, every trigger emits a Shock Trigger event, and raising `AlarmRequest(reason=shock)` is additionally gated by `effectiveArmed==true` (so in Config Mode only the Shock Trigger event is sent).
+- **Shock sensor**: `ShockSensor::isTriggered()` uses `SHOCK_SENSOR1_PIN` for interrupts and selects **external GPIO** or **internal LIS2DHTR** via `SHOCK_SENSOR_TYPE_KEY`. LIS2DHTR config is stored in `SHOCK_L2D_*` keys and applied at boot and when updated. In **Unpaired** bench mode it still detects shocks and logs/overlays locally but emits **no normal transport events** (pairing traffic only). In **Paired** mode, every trigger emits a Shock Trigger event, and raising `AlarmRequest(reason=shock)` is additionally gated by `effectiveArmed==true` (Config Mode still sends Shock Trigger only). The LIS2DHTR and MAX17055 share the I2C bus; `I2CBusManager` mediates bus init/reset so one device doesn't reset the other.
 - **Breach flag**: `EspNowManager::breach` (`Now->breach`) is the single source of truth: `0` = no breach, `1` = active breach. `Breach(set/clear)` events and the `breach` field in the state struct must mirror this flag.
 - **Battery bands**: `PowerManager::getPowerMode()` vs `CRITICAL_POWER_MODE` and `%` from `PowerManager::getBatteryPercentage()`. `Low` is defined as `< LOW_BATTERY_PCT` while not critical; `Critical` is `powerMode == CRITICAL_POWER_MODE`.
 - **Battery policy enforcement**: `Device::enforcePowerPolicy_()` is the only place that:
@@ -668,7 +669,7 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 
 ## Event/reporting
 - Door/Reed (hasReed_): DoorEdge + StateReport on edges. MotorDone-style events emitted only in lock role; suppressed in alarm role. ACK_LOCKED/ACK_UNLOCKED still sent for visibility.
-- Shock (hasShock_, motion enabled): Shock Trigger; AlarmRequest(reason=shock) only when armed.
+- Shock (hasShock_, motion enabled; Config Mode always reports): Shock Trigger; AlarmRequest(reason=shock) only when armed.
 - Breach (paired, armed, locked, door open): AlarmRequest(reason=breach) + Breach set/clear; cleared on door close.
 - DriverFar: lock role only, paired+armed+doorOpen+!locked, rate-limited.
 - Open button (lock role, hasOpenSwitch_): OpenRequest + UnlockRequest; no local motor when paired. In critical power, short TX window then sleep.

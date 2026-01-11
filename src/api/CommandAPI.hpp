@@ -172,6 +172,11 @@ struct PairInit {                        // Frame layout used to start pairing/h
 #define CMD_LOCK_EMAG_OFF       0x2A  // Set lock driver to screw motor (endstop) mode
 #define CMD_SET_CHANNEL         0x2B  // Set Wi-Fi/ESP-NOW channel (payload: channel u8; slave reboots)
 
+// Shock sensor configuration [FOREGROUND ADMIN]
+#define CMD_SET_SHOCK_SENSOR_TYPE      0x2C  // Set shock sensor type (payload: type u8; 0=external, 1=internal)
+#define CMD_SET_SHOCK_SENS_THRESHOLD   0x2D  // Set shock sensitivity threshold (payload: threshold u8)
+#define CMD_SET_SHOCK_L2D_CFG          0x2E  // Set LIS2DHTR config (payload: odr,scale,res,evt,dur,axis,hpf_mode,hpf_cut,hpf_en,latch,int_lvl)
+
 
 // ============================================================================
 // Acknowledgment Messages (slave -> master)
@@ -233,6 +238,12 @@ struct PairInit {                        // Frame layout used to start pairing/h
 
 #define ACK_FP_VERIFY_ON        0xD4  // Verify loop started
 #define ACK_FP_VERIFY_OFF       0xD5  // Verify loop stopped
+
+// ---------------------- Shock Sensor Config Replies ------------------------
+
+#define ACK_SHOCK_SENSOR_TYPE_SET      0xD6  // Shock sensor type updated
+#define ACK_SHOCK_SENS_THRESHOLD_SET   0xD7  // Shock sensitivity threshold updated
+#define ACK_SHOCK_L2D_CFG_SET          0xD8  // LIS2DHTR config updated
 
 // ---------------------- General State / Error Replies -----------------------
 

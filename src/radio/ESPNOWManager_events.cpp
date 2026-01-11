@@ -163,9 +163,23 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
   }
 
   // ---------- Shock module ----------
-  if (mod == static_cast<uint8_t>(transport::Module::Shock) && op == 0x03) {
-    sendRespNoPayload(EVT_MTRTTRG, false);
-    return true;
+  if (mod == static_cast<uint8_t>(transport::Module::Shock)) {
+    if (op == 0x03) {
+      sendRespNoPayload(EVT_MTRTTRG, false);
+      return true;
+    }
+    if (op == 0x10) {
+      sendRespNoPayload(ACK_SHOCK_SENSOR_TYPE_SET, statusOk);
+      return true;
+    }
+    if (op == 0x11) {
+      sendRespNoPayload(ACK_SHOCK_SENS_THRESHOLD_SET, statusOk);
+      return true;
+    }
+    if (op == 0x12) {
+      sendRespNoPayload(ACK_SHOCK_L2D_CFG_SET, statusOk);
+      return true;
+    }
   }
 
   // ---------- Switch/Reed module ----------

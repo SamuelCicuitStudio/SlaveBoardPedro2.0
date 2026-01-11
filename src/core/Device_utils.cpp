@@ -16,7 +16,10 @@ uint32_t Device::ms_(){ return millis(); }
 // Persisted / manager states
 bool Device::isConfigured_() const { return CONF && CONF->GetBool(DEVICE_CONFIGURED, false); }
 bool Device::isArmed_() const      { return CONF && CONF->GetBool(ARMED_STATE, false); }
-bool Device::isMotionEnabled_() const { return CONF && CONF->GetBool(MOTION_TRIG_ALARM, false); }
+bool Device::isMotionEnabled_() const {
+  if (configModeActive_) return true;
+  return CONF && CONF->GetBool(MOTION_TRIG_ALARM, false);
+}
 bool Device::isLocked_() const     { return CONF && CONF->GetBool(LOCK_STATE, true); }
 bool Device::isDoorOpen_() const   { return Sw && Sw->isDoorOpen(); }
 bool Device::isMotorMoving_() const{ return motorDriver && motorDriver->isMovingOrSettling(MOTOR_SETTLE_MS); }
