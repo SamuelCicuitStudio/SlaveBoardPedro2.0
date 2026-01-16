@@ -72,35 +72,35 @@ The RGB LED shows two kinds of indications:
 
 | Meaning | Pattern | Color |
 |---|---|---|
-| Boot / Init | steady | dim gray `#0A0A0A` |
+| Boot / Init | steady | dim gray <img alt="#0A0A0A" src="https://placehold.co/16x16/0A0A0A/0A0A0A.png" /> `#0A0A0A` |
 | Waiting for pairing | rainbow animation | (cycling) |
-| Paired + master online | double heartbeat | green `#00B43C` |
-| Paired + master offline | blink | indigo `#5D00FF` |
-| Sleep | mostly off + rare heartbeat | deep blue `#1A2E80` |
+| Paired + master online | double heartbeat | green <img alt="#00B43C" src="https://placehold.co/16x16/00B43C/00B43C.png" /> `#00B43C` |
+| Paired + master offline | blink | indigo <img alt="#5D00FF" src="https://placehold.co/16x16/5D00FF/5D00FF.png" /> `#5D00FF` |
+| Sleep | mostly off + rare heartbeat | deep blue <img alt="#1A2E80" src="https://placehold.co/16x16/1A2E80/1A2E80.png" /> `#1A2E80` |
 
 ### Overlay events (short indications)
 
 | Event | Pattern | Color |
 |---|---|---|
-| Door opened | quick blink | tangerine `#FF7A00` |
-| Door closed | short flash | teal `#00A7A7` |
-| Shock detected | quick blink | hot pink `#FF007F` |
-| Breach / intrusion | fast blink | orange-red `#FF3B00` |
-| Low battery | slow blink | orange `#FF9500` |
-| Critical battery | heartbeat | red `#FF0000` |
+| Door opened | quick blink | tangerine <img alt="#FF7A00" src="https://placehold.co/16x16/FF7A00/FF7A00.png" /> `#FF7A00` |
+| Door closed | short flash | teal <img alt="#00A7A7" src="https://placehold.co/16x16/00A7A7/00A7A7.png" /> `#00A7A7` |
+| Shock detected | quick blink | hot pink <img alt="#FF007F" src="https://placehold.co/16x16/FF007F/FF007F.png" /> `#FF007F` |
+| Breach / intrusion | fast blink | orange-red <img alt="#FF3B00" src="https://placehold.co/16x16/FF3B00/FF3B00.png" /> `#FF3B00` |
+| Low battery | slow blink | orange <img alt="#FF9500" src="https://placehold.co/16x16/FF9500/FF9500.png" /> `#FF9500` |
+| Critical battery | heartbeat | red <img alt="#FF0000" src="https://placehold.co/16x16/FF0000/FF0000.png" /> `#FF0000` |
 
 ### Fingerprint enrollment overlays (Lock variant only)
 
 | Enrollment step | Pattern | Color |
 |---|---|---|
-| Start enroll | blink | cobalt `#004DFF` |
-| Lift finger | flash | yellow `#FFEA00` |
-| Capture 1 | flash | arctic `#00E5FF` |
-| Capture 2 | flash | seafoam `#00FFC8` |
-| Storing model | blink | periwinkle `#6A6AFF` |
-| Enroll OK | flash | turquoise `#26FFDA` |
-| Enroll fail | blink | vivid red `#FF1744` |
-| Enroll timeout | blink | orange-red `#FF5A00` |
+| Start enroll | blink | cobalt <img alt="#004DFF" src="https://placehold.co/16x16/004DFF/004DFF.png" /> `#004DFF` |
+| Lift finger | flash | yellow <img alt="#FFEA00" src="https://placehold.co/16x16/FFEA00/FFEA00.png" /> `#FFEA00` |
+| Capture 1 | flash | arctic <img alt="#00E5FF" src="https://placehold.co/16x16/00E5FF/00E5FF.png" /> `#00E5FF` |
+| Capture 2 | flash | seafoam <img alt="#00FFC8" src="https://placehold.co/16x16/00FFC8/00FFC8.png" /> `#00FFC8` |
+| Storing model | blink | periwinkle <img alt="#6A6AFF" src="https://placehold.co/16x16/6A6AFF/6A6AFF.png" /> `#6A6AFF` |
+| Enroll OK | flash | turquoise <img alt="#26FFDA" src="https://placehold.co/16x16/26FFDA/26FFDA.png" /> `#26FFDA` |
+| Enroll fail | blink | vivid red <img alt="#FF1744" src="https://placehold.co/16x16/FF1744/FF1744.png" /> `#FF1744` |
+| Enroll timeout | blink | orange-red <img alt="#FF5A00" src="https://placehold.co/16x16/FF5A00/FF5A00.png" /> `#FF5A00` |
 
 Tip: If you used triple-tap to disable RGB feedback, the device will keep working but will not show these patterns until you enable RGB again.
 
