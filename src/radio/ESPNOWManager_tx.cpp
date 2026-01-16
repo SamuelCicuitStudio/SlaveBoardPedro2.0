@@ -19,8 +19,8 @@ void EspNowManager::onDataSent(const uint8_t* mac_addr, esp_now_send_status_t st
       instance->pendingPairInitAckDone_ = true;
       instance->pendingPairInitAckOk_ = (status == ESP_NOW_SEND_SUCCESS);
       instance->pendingPairInitAckDoneMs_ = millis();
-      DBG_PRINTF("[ESPNOW][pair] ACK_PAIR_INIT delivered=%u\n",
-                 (unsigned)(instance->pendingPairInitAckOk_ ? 1 : 0));
+      /*DBG_PRINTF("[ESPNOW][pair] ACK_PAIR_INIT delivered=%u\n",
+                 (unsigned)(instance->pendingPairInitAckOk_ ? 1 : 0));*/
     }
   }
 

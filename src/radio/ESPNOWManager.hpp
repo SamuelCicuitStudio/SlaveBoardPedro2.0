@@ -252,6 +252,7 @@ private:
     uint8_t     pendingPairInitChannel_ = MASTER_CHANNEL_DEFAULT;
     uint8_t     pendingPairInitCaps_ = 0;
     uint32_t    pendingPairInitSeed_ = 0;
+    bool        pendingPairInitShockExternal_ = true;
     bool        pendingPairInitAckInFlight_ = false;
     bool        pendingPairInitAckDone_ = false;
     bool        pendingPairInitAckOk_ = false;

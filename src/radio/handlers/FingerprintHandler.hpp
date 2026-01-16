@@ -26,6 +26,7 @@ private:
   void sendStatus_(const transport::TransportMessage& req,
                    transport::StatusCode status,
                    const std::vector<uint8_t>& extra = {});
+  void sendReasonEvent_(uint8_t reason);
 
   Fingerprint* fp_;
   transport::TransportPort* port_;

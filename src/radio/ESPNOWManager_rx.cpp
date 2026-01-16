@@ -33,8 +33,8 @@ bool parseCommandFrame_(const uint8_t* data, size_t len, uint16_t& opcodeOut,
 void EspNowManager::onDataReceived(const uint8_t* mac_addr, const uint8_t* data, int len) {
   if (!instance || !mac_addr || !data || len <= 0) return;
 
-  DBG_PRINTF("[ESPNOW][RX][onDataReceived] from %02X:%02X:%02X:%02X:%02X:%02X len=%d\n",
-               mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5], len);
+  /*DBG_PRINTF("[ESPNOW][RX][onDataReceived] from %02X:%02X:%02X:%02X:%02X:%02X len=%d\n",
+               mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5], len);*/
 
   RxEvent e{};
   memcpy(e.mac, mac_addr, 6);

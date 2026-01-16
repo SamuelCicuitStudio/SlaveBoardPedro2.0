@@ -41,7 +41,7 @@ EspNowManager::EspNowManager(RTCManager* RTC,
   instance = this;
   breach = false;
 
-  DBG_PRINTLN("[ESPNOW][Ctor] Constructing EspNowManager…");
+  //DBG_PRINTLN("[ESPNOW][Ctor] Constructing EspNowManager…");
 
   // Queues
   rxQ   = xQueueCreate(ESPNOW_RX_QUEUE_SIZE, sizeof(RxEvent));

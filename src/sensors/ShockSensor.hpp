@@ -60,7 +60,7 @@
 
 // Cooldown duration after a trigger (ms)
 #ifndef SHOCK_COOLDOWN_MS
-#define SHOCK_COOLDOWN_MS 2000
+#define SHOCK_COOLDOWN_MS 1000
 #endif
 
 class NVS;

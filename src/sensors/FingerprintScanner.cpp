@@ -2,6 +2,25 @@
 #include <ConfigNvs.hpp>
 #include <NVSManager.hpp>
 #include <RGBLed.hpp>
+#include <Utils.hpp>
+
+namespace {
+void logFpPayload_(const char* tag,
+                   uint8_t op,
+                   const std::vector<uint8_t>& payload) {
+    DBG_PRINTF("[FP] %s op=0x%02X len=%u", tag, op, (unsigned)payload.size());
+    if (!payload.empty()) {
+        DBG_PRINT(" data=");
+        for (size_t i = 0; i < payload.size(); ++i) {
+            DBG_PRINTF("%02X", payload[i]);
+            if (i + 1 < payload.size()) {
+                DBG_PRINT(" ");
+            }
+        }
+    }
+    DBG_PRINTLN();
+}
+}
 
 // -----------------------------------------------------------
 // Constructor
@@ -40,7 +59,12 @@ Fingerprint::Fingerprint(MotorDriver* motor,
 // We probe the sensor WITHOUT adopting (we won't change passwords).
 // We ONLY start background verify if the sensor is present AND trusted.
 void Fingerprint::begin() {
+    DBG_PRINTLN("[FP] begin()");
     bool ok = initSensor_(false);
+    DBG_PRINTF("[FP] begin: sensor_ok=%d present=%d tamper=%d\n",
+               ok ? 1 : 0,
+               sensorPresent_ ? 1 : 0,
+               tamperDetected_ ? 1 : 0);
     if (ok) {
         startVerifyMode();
     }
@@ -53,10 +77,12 @@ void Fingerprint::attachEspNow(EspNowManager* now) {
     lock_();
     Now = now;
     unlock_();
+    DBG_PRINTLN("[FP] attachEspNow");
 }
 
 void Fingerprint::sendFpEvent_(uint8_t op, const std::vector<uint8_t>& payload) {
     if (!transport_) return;
+    logFpPayload_("TX_EVT", op, payload);
     transport::TransportMessage msg;
     msg.header.destId = 1; // master
     msg.header.module = static_cast<uint8_t>(transport::Module::Fingerprint);
@@ -71,13 +97,33 @@ void Fingerprint::sendFpEvent_(uint8_t op, const std::vector<uint8_t>& payload) 
 void Fingerprint::sendFpStatusEvent_(uint8_t op, transport::StatusCode status,
                                      const std::vector<uint8_t>& extra) {
     std::vector<uint8_t> pl;
+    if (op == 0x0B) {
+        // For fail/busy/no-sensor/tamper events, payload is just the reason code.
+        const uint8_t reason = extra.empty() ? 0 : extra[0];
+        DBG_PRINTF("[FP] TX_STATUS op=0x%02X status=%u reason=%u\n",
+                   op,
+                   static_cast<unsigned>(status),
+                   static_cast<unsigned>(reason));
+        pl.push_back(reason);
+        sendFpEvent_(op, pl);
+        return;
+    }
+
     pl.reserve(1 + extra.size());
     pl.push_back(static_cast<uint8_t>(status));
     pl.insert(pl.end(), extra.begin(), extra.end());
+    DBG_PRINTF("[FP] TX_STATUS op=0x%02X status=%u extra_len=%u\n",
+               op,
+               static_cast<unsigned>(status),
+               (unsigned)extra.size());
     sendFpEvent_(op, pl);
 }
 
 void Fingerprint::sendEnrollStage_(uint8_t stage, uint8_t status, uint16_t slot) {
+    DBG_PRINTF("[FP] ENROLL stage=%u status=%u slot=%u\n",
+               (unsigned)stage,
+               (unsigned)status,
+               (unsigned)slot);
     std::vector<uint8_t> pl;
     pl.reserve(4);
     pl.push_back(stage);
@@ -124,6 +170,7 @@ void Fingerprint::stopAllFpTasks_() {
 //
 bool Fingerprint::initSensor_(bool allowAdopt) {
     lock_();
+    DBG_PRINTF("[FP] initSensor allowAdopt=%d\n", allowAdopt ? 1 : 0);
 
     if (!uart) {
         uart = new HardwareSerial(1);
@@ -179,6 +226,10 @@ bool Fingerprint::initSensor_(bool allowAdopt) {
         delete tmp;
     }
 
+    DBG_PRINTF("[FP] initSensor result present=%d tamper=%d\n",
+               sensorPresent_ ? 1 : 0,
+               tamperDetected_ ? 1 : 0);
+
     // SINGLE snapshot via transport
     if (isReadyForVerify_()) {
         finger->getTemplateCount();
@@ -191,9 +242,13 @@ bool Fingerprint::initSensor_(bool allowAdopt) {
         pl.push_back(uint8_t((finger->templateCount >> 8) & 0xFF));
         pl.push_back(uint8_t(finger->capacity & 0xFF));
         pl.push_back(uint8_t((finger->capacity >> 8) & 0xFF));
+        DBG_PRINTF("[FP] DB snapshot count=%u cap=%u\n",
+                   (unsigned)finger->templateCount,
+                   (unsigned)finger->capacity);
         sendFpEvent_(0x06, pl); // reuse QueryDb opcode as event
     } else if (sensorPresent_) {
         // sensor answered, but it's not ours (tampered / wrong password)
+        DBG_PRINTLN("[FP] sensor present but tampered");
         sendFpStatusEvent_(0x0B, transport::StatusCode::DENIED, {3}); // reason 3=tamper
         lastTamperReportMs_ = millis();
     }
@@ -214,6 +269,7 @@ bool Fingerprint::initSensor_(bool allowAdopt) {
 //   - ONLY if that succeeds we startVerifyMode()
 //   - SendAck FP_ADOPT_OK / FP_ADOPT_FAIL once.
 transport::StatusCode Fingerprint::adoptNewSensor() {
+    DBG_PRINTLN("[FP] adoptNewSensor");
     stopAllFpTasks_();
 
     bool success = initSensor_(true); // try to claim the sensor
@@ -239,6 +295,7 @@ transport::StatusCode Fingerprint::adoptNewSensor() {
 //   4. ONLY restart verify loop if still trusted (usually no)
 //   5. SendAck FP_RELEASE_OK / FP_RELEASE_FAIL once.
 transport::StatusCode Fingerprint::releaseSensorToDefault() {
+    DBG_PRINTLN("[FP] releaseSensorToDefault");
     stopAllFpTasks_();
 
     bool success = false;
@@ -275,12 +332,14 @@ void Fingerprint::startVerifyMode() {
 
     // already running?
     if (fingerMonitorHandle != nullptr) {
+        DBG_PRINTLN("[FP] verify already running");
         unlock_();
         return;
     }
 
     // sensor not ready/trusted? don't start
     if (!isReadyForVerify_()) {
+        DBG_PRINTLN("[FP] verify not started (sensor not ready)");
         unlock_();
         return;
     }
@@ -295,6 +354,7 @@ void Fingerprint::startVerifyMode() {
         1,
         &fingerMonitorHandle
     );
+    DBG_PRINTLN("[FP] verify started");
     unlock_();
 }
 
@@ -302,6 +362,7 @@ void Fingerprint::stopVerifyMode() {
     lock_();
     verifyLoopStopFlag = true;
     unlock_();
+    DBG_PRINTLN("[FP] verify stop requested");
     // FingerMonitorTask will self-delete and clear handle
 }
 
@@ -418,6 +479,7 @@ transport::StatusCode Fingerprint::requestEnrollment(uint16_t slotId) {
     lock_();
 
     if (!finger) {
+        DBG_PRINTLN("[FP] enroll denied (no sensor)");
         sendFpStatusEvent_(0x0B, transport::StatusCode::DENIED, {1}); // no sensor
         unlock_();
         return transport::StatusCode::DENIED;
@@ -425,11 +487,13 @@ transport::StatusCode Fingerprint::requestEnrollment(uint16_t slotId) {
 
     if (enrollmentTaskHandle != nullptr ||
         enrollmentState == FP_ENROLL_IN_PROGRESS) {
+        DBG_PRINTLN("[FP] enroll busy");
         sendFpStatusEvent_(0x0B, transport::StatusCode::BUSY, {2}); // busy
         unlock_();
         return transport::StatusCode::BUSY;
     }
 
+    DBG_PRINTF("[FP] enroll start slot=%u\n", (unsigned)slotId);
     targetEnrollID_     = slotId;
     enrollmentState     = FP_ENROLL_IN_PROGRESS;
     verifyLoopStopFlag  = true;   // ask verify task to stop
@@ -471,6 +535,7 @@ void Fingerprint::enrollFingerprintTask() {
 void Fingerprint::enrollFingerprint(void* parameter) {
     Fingerprint* self = static_cast<Fingerprint*>(parameter);
 
+    DBG_PRINTLN("[FP] enroll task running");
     uint8_t res = self->doEnrollment_(self->targetEnrollID_);
 
     self->lock_();
@@ -481,6 +546,7 @@ void Fingerprint::enrollFingerprint(void* parameter) {
     self->unlock_();
 
     if (res == FINGERPRINT_OK) {
+        DBG_PRINTLN("[FP] enroll OK");
         self->setDeviceConfigured(true);
         self->tamperDetected_ = false; // successful enroll implies trusted
         self->sendEnrollStage_(6, /*status*/0, self->targetEnrollID_); // OK
@@ -500,12 +566,14 @@ void Fingerprint::enrollFingerprint(void* parameter) {
 // -----------------------------------------------------------
 uint8_t Fingerprint::doEnrollment_(uint16_t slotId) {
     if (!finger) {
+        DBG_PRINTLN("[FP] enroll fail (no sensor)");
         if (RGB) RGB->postOverlay(OverlayEvent::FP_ENROLL_FAIL);
         sendEnrollStage_(7, /*status*/1, slotId);
         return FINGERPRINT_PACKETRECIEVEERR;
     }
 
     const uint32_t SCAN_TIMEOUT_MS = 15000;
+    const uint32_t LIFT_TIMEOUT_MS = 15000;
 
     // ---- First scan ----
     uint32_t t0 = millis();
@@ -521,6 +589,7 @@ uint8_t Fingerprint::doEnrollment_(uint16_t slotId) {
             }
         }
         if (millis() - t0 > SCAN_TIMEOUT_MS) {
+            DBG_PRINTLN("[FP] enroll timeout (capture1)");
             if (RGB) RGB->postOverlay(OverlayEvent::FP_ENROLL_TIMEOUT);
             sendEnrollStage_(8, /*status*/1, slotId); // TIMEOUT
             return FINGERPRINT_TIMEOUT;
@@ -529,14 +598,28 @@ uint8_t Fingerprint::doEnrollment_(uint16_t slotId) {
     }
 
     // ---- Ask user to lift finger ----
+    vTaskDelay(pdMS_TO_TICKS(250)); // allow master/UI to show CAP1
     if (RGB) RGB->postOverlay(OverlayEvent::FP_ENROLL_LIFT);
     sendEnrollStage_(3, /*status*/0, slotId); // LIFT
+    vTaskDelay(pdMS_TO_TICKS(2000)); // match reference flow before checking removal
 
     t0 = millis();
-    while (finger->getImage() != FINGERPRINT_NOFINGER) {
-        if (millis() - t0 > 3000) break;
+    while (true) {
+        uint8_t p = finger->getImage();
+        if (p == FINGERPRINT_NOFINGER) {
+            break;
+        }
+        if (millis() - t0 > LIFT_TIMEOUT_MS) {
+            DBG_PRINTLN("[FP] enroll timeout (lift)");
+            if (RGB) RGB->postOverlay(OverlayEvent::FP_ENROLL_TIMEOUT);
+            sendEnrollStage_(8, /*status*/1, slotId); // TIMEOUT
+            return FINGERPRINT_TIMEOUT;
+        }
         vTaskDelay(pdMS_TO_TICKS(200));
     }
+
+    // Prompt: place same finger again (reuse START stage)
+    sendEnrollStage_(1, /*status*/0, slotId);
 
     // ---- Second scan ----
     t0 = millis();
@@ -552,6 +635,7 @@ uint8_t Fingerprint::doEnrollment_(uint16_t slotId) {
             }
         }
         if (millis() - t0 > SCAN_TIMEOUT_MS) {
+            DBG_PRINTLN("[FP] enroll timeout (capture2)");
             if (RGB) RGB->postOverlay(OverlayEvent::FP_ENROLL_TIMEOUT);
             sendEnrollStage_(8, /*status*/1, slotId); // TIMEOUT
             return FINGERPRINT_TIMEOUT;
@@ -560,11 +644,13 @@ uint8_t Fingerprint::doEnrollment_(uint16_t slotId) {
     }
 
     // ---- Build model + store ----
+    vTaskDelay(pdMS_TO_TICKS(250)); // allow master/UI to show CAP2
     if (RGB) RGB->postOverlay(OverlayEvent::FP_ENROLL_STORING);
     sendEnrollStage_(5, /*status*/0, slotId); // STORING
 
     uint8_t p = finger->createModel();
     if (p != FINGERPRINT_OK) {
+        DBG_PRINTF("[FP] enroll createModel fail=%u\n", (unsigned)p);
         if (RGB) RGB->postOverlay(OverlayEvent::FP_ENROLL_FAIL);
         sendEnrollStage_(7, /*status*/1, slotId);
         return p;
@@ -572,6 +658,7 @@ uint8_t Fingerprint::doEnrollment_(uint16_t slotId) {
 
     p = finger->storeModel(slotId);
     if (p != FINGERPRINT_OK) {
+        DBG_PRINTF("[FP] enroll storeModel fail=%u\n", (unsigned)p);
         if (RGB) RGB->postOverlay(OverlayEvent::FP_ENROLL_FAIL);
         sendEnrollStage_(7, /*status*/1, slotId);
         return p;

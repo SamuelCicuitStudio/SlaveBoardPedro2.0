@@ -85,6 +85,7 @@ struct AckStatePayload {                 // Response payload describing current 
 struct PairInit {                        // Frame layout used to start pairing/handshake
     uint8_t  frameType;                  // Must be NOW_FRAME_PAIR_INIT so receiver can parse as PairInit
     uint8_t  caps;                       // Capability bitfield: bit0=Open, bit1=Shock, bit2=Reed, bit3=Fingerprint
+    uint8_t  shock_external;             // 0=internal shock, 1=external (only valid when shock cap enabled)
     uint32_t seed_be;                    // Pairing seed value, encoded big-endian on wire
 };
 

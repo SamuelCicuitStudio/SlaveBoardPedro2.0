@@ -238,7 +238,11 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
       }
       case 0x0B: { // Fail/busy/no-sensor/tamper
         if (pl.empty()) break;
-        switch (pl[0]) {
+        uint8_t reason = pl[0];
+        if (pl.size() >= 2 && reason > 3) {
+          reason = pl[1];
+        }
+        switch (reason) {
           case 0: sendRespNoPayload(EVT_FP_FAIL, false);          return true;
           case 1: sendRespNoPayload(ACK_FP_NO_SENSOR,     false); return true;
           case 2: sendRespNoPayload(ACK_FP_BUSY,          false); return true;

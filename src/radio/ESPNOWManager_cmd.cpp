@@ -84,11 +84,11 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
 
   if (!isConfigured_()) {
     if (opcode == CMD_CONFIG_STATUS) {
-      DBG_PRINTLN("[ESPNOW][CMD] Unconfigured -> CMD_CONFIG_STATUS");
+     // DBG_PRINTLN("[ESPNOW][CMD] Unconfigured -> CMD_CONFIG_STATUS");
       SendAck(ACK_NOT_CONFIGURED, false);
       return;
     }
-    DBG_PRINTLN("[ESPNOW][CMD] Unconfigured -> command ignored");
+    //DBG_PRINTLN("[ESPNOW][CMD] Unconfigured -> command ignored");
     return;
   }
 
@@ -97,12 +97,12 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
                                   const std::vector<uint8_t>& payloadVec,
                                   const char* tag) -> bool {
     if (!transport) {
-      DBG_PRINTLN(String("[ESPNOW][CMD] ") + (tag ? tag : "TRANSPORT") + " -> transport missing");
+      //DBG_PRINTLN(String("[ESPNOW][CMD] ") + (tag ? tag : "TRANSPORT") + " -> transport missing");
       SendAck(ACK_UNINTENDED, false);
       return false;
     }
     if (!injectTransportRx(this, module, op, payloadVec, false)) {
-      DBG_PRINTLN(String("[ESPNOW][CMD] ") + (tag ? tag : "TRANSPORT") + " -> inject failed");
+      //DBG_PRINTLN(String("[ESPNOW][CMD] ") + (tag ? tag : "TRANSPORT") + " -> inject failed");
       SendAck(ACK_UNINTENDED, false);
       return false;
     }
@@ -111,31 +111,29 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
 
   // Always honor reboot/reset per CommandAPI.
   if (opcode == CMD_REBOOT) {
-    DBG_PRINTLN("[ESPNOW][CMD] CMD_REBOOT -> Device Reboot");
+    //DBG_PRINTLN("[ESPNOW][CMD] CMD_REBOOT -> Device Reboot");
     SendAck(ACK_REBOOT, true);
     ResetManager::RequestReboot("ESP-NOW CMD_REBOOT");
     return;
   }
   if (opcode == CMD_SET_CHANNEL) {
     if (!payload || payloadLen < 1) {
-      DBG_PRINTLN("[ESPNOW][CMD] CMD_SET_CHANNEL -> missing payload");
+     // DBG_PRINTLN("[ESPNOW][CMD] CMD_SET_CHANNEL -> missing payload");
       SendAck(ACK_UNINTENDED, false);
       return;
     }
     const uint8_t channel = payload[0];
     if (channel < 1 || channel > 13) {
-      DBG_PRINTF("[ESPNOW][CMD] CMD_SET_CHANNEL -> invalid=%u\n",
-                 static_cast<unsigned>(channel));
+      //DBG_PRINTF("[ESPNOW][CMD] CMD_SET_CHANNEL -> invalid=%u\n",static_cast<unsigned>(channel));
       SendAck(ACK_ERR_POLICY, false);
       return;
     }
     if (!CONF) {
-      DBG_PRINTLN("[ESPNOW][CMD] CMD_SET_CHANNEL -> conf missing");
+     // DBG_PRINTLN("[ESPNOW][CMD] CMD_SET_CHANNEL -> conf missing");
       SendAck(ACK_ERR_POLICY, false);
       return;
     }
-    DBG_PRINTF("[ESPNOW][CMD] CMD_SET_CHANNEL -> channel=%u (reboot)\n",
-               static_cast<unsigned>(channel));
+   // DBG_PRINTF("[ESPNOW][CMD] CMD_SET_CHANNEL -> channel=%u (reboot)\n",static_cast<unsigned>(channel));
 
     TxAckEvent ack{};
     size_t frameLen = 0;
@@ -170,7 +168,7 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
     return;
   }
   if (opcode == CMD_REMOVE_SLAVE) {
-    DBG_PRINTLN("[ESPNOW][CMD] CMD_REMOVE_SLAVE -> Device Reset procedure (factory)");
+    //DBG_PRINTLN("[ESPNOW][CMD] CMD_REMOVE_SLAVE -> Device Reset procedure (factory)");
 
     TxAckEvent ack{};
     size_t frameLen = 0;
@@ -210,7 +208,7 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
       CONF->PutBool(HAS_OPEN_SWITCH_KEY,  false);
       CONF->PutBool(HAS_SHOCK_SENSOR_KEY, false);
       CONF->PutBool(HAS_REED_SWITCH_KEY,  false);
-      DBG_PRINTLN("[ESPNOW][CMD] Reset -> cleared pairing");
+     // DBG_PRINTLN("[ESPNOW][CMD] Reset -> cleared pairing");
     }
     capBitsShadowValid_ = false;
     capBitsShadow_ = 0;
@@ -218,7 +216,7 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
     return;
   }
   if (opcode == CMD_FACTORY_RESET) {
-    DBG_PRINTLN("[ESPNOW][CMD] CMD_FACTORY_RESET -> Device Reset procedure (factory)");
+    //DBG_PRINTLN("[ESPNOW][CMD] CMD_FACTORY_RESET -> Device Reset procedure (factory)");
     if (CONF) {
       CONF->PutString(MASTER_ESPNOW_ID, MASTER_ESPNOW_ID_DEFAULT);
       CONF->PutString(MASTER_LMK_KEY, MASTER_LMK_DEFAULT);
@@ -228,7 +226,7 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
       CONF->PutBool(HAS_OPEN_SWITCH_KEY,  false);
       CONF->PutBool(HAS_SHOCK_SENSOR_KEY, false);
       CONF->PutBool(HAS_REED_SWITCH_KEY,  false);
-      DBG_PRINTLN("[ESPNOW][CMD] Reset -> cleared pairing");
+     // DBG_PRINTLN("[ESPNOW][CMD] Reset -> cleared pairing");
     }
     capBitsShadowValid_ = false;
     capBitsShadow_ = 0;
@@ -237,53 +235,53 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
     return;
   }
 
-  DBG_PRINTF("[ESPNOW][CMD] opcode=0x%04X\n", (unsigned)opcode);
+ // DBG_PRINTF("[ESPNOW][CMD] opcode=0x%04X\n", (unsigned)opcode);
 
   // Fast, read-only replies (stay on ESP-NOW edge)
   if (opcode == CMD_STATE_QUERY) {
-    DBG_PRINTLN("[ESPNOW][CMD] CMD_STATE_QUERY -> sendState()");
+   // DBG_PRINTLN("[ESPNOW][CMD] CMD_STATE_QUERY -> sendState()");
     sendState("CMD_STATE_QUERY");
     return;
   }
   if (opcode == CMD_HEARTBEAT_REQ) {
-    DBG_PRINTLN("[ESPNOW][CMD] CMD_HEARTBEAT_REQ -> sendHeartbeat(force=true)");
+  //  DBG_PRINTLN("[ESPNOW][CMD] CMD_HEARTBEAT_REQ -> sendHeartbeat(force=true)");
     sendHeartbeat(true);
     return;
   }
   if (opcode == CMD_CONFIG_STATUS) {
-    DBG_PRINTLN("[ESPNOW][CMD] CMD_CONFIG_STATUS");
+  //  DBG_PRINTLN("[ESPNOW][CMD] CMD_CONFIG_STATUS");
     const bool configured = (CONF && CONF->GetBool(DEVICE_CONFIGURED, false));
     SendAck(configured ? ACK_CONFIGURED : ACK_NOT_CONFIGURED, configured);
     return;
   }
   if (opcode == CMD_FP_QUERY_DB) {
     if (IS_SLAVE_ALARM) {
-      DBG_PRINTLN("[ESPNOW][CMD] FP_QUERY_DB -> ignored (alarm role)");
+    //  DBG_PRINTLN("[ESPNOW][CMD] FP_QUERY_DB -> ignored (alarm role)");
       SendAck(ACK_ERR_POLICY, false);
       return;
     }
-    DBG_PRINTLN("[ESPNOW][CMD] CMD_FP_QUERY_DB -> transport QueryDb");
+    //DBG_PRINTLN("[ESPNOW][CMD] CMD_FP_QUERY_DB -> transport QueryDb");
     dispatchTransport(Module::Fingerprint, /*op*/0x06, {}, "FP_QUERY_DB");
     return;
   }
   if (opcode == CMD_FP_NEXT_ID) {
     if (IS_SLAVE_ALARM) {
-      DBG_PRINTLN("[ESPNOW][CMD] FP_NEXT_ID -> ignored (alarm role)");
+    //  DBG_PRINTLN("[ESPNOW][CMD] FP_NEXT_ID -> ignored (alarm role)");
       SendAck(ACK_ERR_POLICY, false);
       return;
     }
-    DBG_PRINTLN("[ESPNOW][CMD] CMD_FP_NEXT_ID -> transport NextId");
+   // DBG_PRINTLN("[ESPNOW][CMD] CMD_FP_NEXT_ID -> transport NextId");
     dispatchTransport(Module::Fingerprint, /*op*/0x07, {}, "FP_NEXT_ID");
     return;
   }
   if (opcode == CMD_BATTERY_LEVEL) {
-    DBG_PRINTLN("[ESPNOW][CMD] CMD_BATTERY_LEVEL");
+    //DBG_PRINTLN("[ESPNOW][CMD] CMD_BATTERY_LEVEL");
     uint8_t pct = static_cast<uint8_t>(Power ? Power->batteryPercentage : 0);
     SendAck(EVT_BATTERY_PREFIX, &pct, 1, true);
     return;
   }
   if (opcode == CMD_CLEAR_ALARM) {
-    DBG_PRINTLN("[ESPNOW][CMD] CMD_CLEAR_ALARM -> clear alarm/buzzer");
+   // DBG_PRINTLN("[ESPNOW][CMD] CMD_CLEAR_ALARM -> clear alarm/buzzer");
     breach = false;
     SendAck(ACK_ALARM_CLEARED, true);
     return;
@@ -291,68 +289,66 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
 
   // ---------- State-changing: bridge to transport then ACK ----------
   if (opcode == CMD_ARM_SYSTEM) {
-    DBG_PRINTLN("[ESPNOW][CMD] ARM_SYSTEM -> Device Arm (op=0x04)");
+    //DBG_PRINTLN("[ESPNOW][CMD] ARM_SYSTEM -> Device Arm (op=0x04)");
     dispatchTransport(Module::Device, /*op*/0x04, {}, "ARM");
     return;
   }
   if (opcode == CMD_DISARM_SYSTEM) {
-    DBG_PRINTLN("[ESPNOW][CMD] DISARM_SYSTEM -> Device Disarm (op=0x05)");
+   // DBG_PRINTLN("[ESPNOW][CMD] DISARM_SYSTEM -> Device Disarm (op=0x05)");
     dispatchTransport(Module::Device, /*op*/0x05, {}, "DISARM");
     return;
   }
   if (opcode == CMD_ENABLE_MOTION) {
-    DBG_PRINTLN("[ESPNOW][CMD] ENABLE_MOTION -> Shock Enable (op=0x01)");
+   // DBG_PRINTLN("[ESPNOW][CMD] ENABLE_MOTION -> Shock Enable (op=0x01)");
     dispatchTransport(Module::Shock, /*op*/0x01, {}, "MOTION_ENABLE");
     return;
   }
   if (opcode == CMD_DISABLE_MOTION) {
-    DBG_PRINTLN("[ESPNOW][CMD] DISABLE_MOTION -> Shock Disable (op=0x02)");
+   // DBG_PRINTLN("[ESPNOW][CMD] DISABLE_MOTION -> Shock Disable (op=0x02)");
     dispatchTransport(Module::Shock, /*op*/0x02, {}, "MOTION_DISABLE");
     return;
   }
   if (opcode == CMD_SET_SHOCK_SENSOR_TYPE) {
     if (!payload || payloadLen < 1) {
-      DBG_PRINTLN("[ESPNOW][CMD] SET_SHOCK_SENSOR_TYPE -> missing payload");
+    //  DBG_PRINTLN("[ESPNOW][CMD] SET_SHOCK_SENSOR_TYPE -> missing payload");
       SendAck(ACK_UNINTENDED, false);
       return;
     }
     uint8_t type = payload[0];
-    DBG_PRINTF("[ESPNOW][CMD] SET_SHOCK_SENSOR_TYPE -> type=%u\n",
-               static_cast<unsigned>(type));
+   // DBG_PRINTF("[ESPNOW][CMD] SET_SHOCK_SENSOR_TYPE -> type=%u\n",static_cast<unsigned>(type));
     dispatchTransport(Module::Shock, /*op*/0x10, {type}, "SHOCK_TYPE");
     return;
   }
   if (opcode == CMD_SET_SHOCK_SENS_THRESHOLD) {
     if (!payload || payloadLen < 1) {
-      DBG_PRINTLN("[ESPNOW][CMD] SET_SHOCK_SENS_THRESHOLD -> missing payload");
+      //DBG_PRINTLN("[ESPNOW][CMD] SET_SHOCK_SENS_THRESHOLD -> missing payload");
       SendAck(ACK_UNINTENDED, false);
       return;
     }
     uint8_t ths = payload[0];
-    DBG_PRINTF("[ESPNOW][CMD] SET_SHOCK_SENS_THRESHOLD -> ths=%u\n",
-               static_cast<unsigned>(ths));
+   // DBG_PRINTF("[ESPNOW][CMD] SET_SHOCK_SENS_THRESHOLD -> ths=%u\n",static_cast<unsigned>(ths));
     dispatchTransport(Module::Shock, /*op*/0x11, {ths}, "SHOCK_THS");
     return;
   }
   if (opcode == CMD_SET_SHOCK_L2D_CFG) {
     if (!payload || payloadLen < 11) {
-      DBG_PRINTLN("[ESPNOW][CMD] SET_SHOCK_L2D_CFG -> missing payload");
+    //  DBG_PRINTLN("[ESPNOW][CMD] SET_SHOCK_L2D_CFG -> missing payload");
       SendAck(ACK_UNINTENDED, false);
       return;
     }
     std::vector<uint8_t> cfg(payload, payload + 11);
-    DBG_PRINTLN("[ESPNOW][CMD] SET_SHOCK_L2D_CFG -> apply");
+   // DBG_PRINTLN("[ESPNOW][CMD] SET_SHOCK_L2D_CFG -> apply");
     dispatchTransport(Module::Shock, /*op*/0x12, cfg, "SHOCK_L2D_CFG");
     return;
   }
   if (opcode == CMD_ENTER_TEST_MODE) {
-    DBG_PRINTLN("[ESPNOW][CMD] ENTER_TEST_MODE -> Device SetConfigMode (op=0x01)");
+    //DBG_PRINTLN("[ESPNOW][CMD] ENTER_TEST_MODE -> Device SetConfigMode (op=0x01)");
     setConfigMode(true);
     dispatchTransport(Module::Device, /*op*/0x01, {}, "TEST_MODE");
     return;
   }
   if (opcode == CMD_CAPS_QUERY) {
-    DBG_PRINTLN("[ESPNOW][CMD] CAPS_QUERY -> ACK_CAPS");
+   // DBG_PRINTLN("[ESPNOW][CMD] CAPS_QUERY -> ACK_CAPS");
     uint8_t bits = 0;
     if (CONF) {
       bits |= CONF->GetBool(HAS_OPEN_SWITCH_KEY,   HAS_OPEN_SWITCH_DEFAULT)   ? 0x01 : 0;
@@ -367,20 +363,20 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
     return;
   }
   if (opcode == CMD_SET_ROLE) {
-    DBG_PRINTLN("[ESPNOW][CMD] SET_ROLE -> Device SetRole (op=0x16)");
+   // DBG_PRINTLN("[ESPNOW][CMD] SET_ROLE -> Device SetRole (op=0x16)");
     uint8_t role = (payloadLen >= 1) ? payload[0] : 0;
     dispatchTransport(Module::Device, /*op*/0x16, {role}, "SET_ROLE");
     return;
   }
   if (opcode == CMD_CANCEL_TIMERS) {
-    DBG_PRINTLN("[ESPNOW][CMD] CANCEL_TIMERS -> Device CancelTimers (op=0x15)");
+   // DBG_PRINTLN("[ESPNOW][CMD] CANCEL_TIMERS -> Device CancelTimers (op=0x15)");
     dispatchTransport(Module::Device, /*op*/0x15, {}, "CANCEL_TIMERS");
     return;
   }
   if (opcode == CMD_SYNC_REQ) {
-    DBG_PRINTLN("[ESPNOW][CMD] SYNC_REQ -> flushJournalToMaster + ACK_SYNCED");
+   // DBG_PRINTLN("[ESPNOW][CMD] SYNC_REQ -> flushJournalToMaster + ACK_SYNCED");
     size_t flushed = flushJournalToMaster_();
-    DBG_PRINTF("[ESPNOW][CMD] Journal flushed lines=%u\n", (unsigned)flushed);
+    //DBG_PRINTF("[ESPNOW][CMD] Journal flushed lines=%u\n", (unsigned)flushed);
     SendAck(ACK_SYNCED, true);
     return;
   }
@@ -388,11 +384,11 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
   // Motor commands
   if (opcode == CMD_LOCK_SCREW) {
     if (IS_SLAVE_ALARM) {
-      DBG_PRINTLN("[ESPNOW][CMD] LOCK_SCREW -> ignored (alarm role)");
+    //  DBG_PRINTLN("[ESPNOW][CMD] LOCK_SCREW -> ignored (alarm role)");
       SendAck(ACK_ERR_POLICY, false);
       return;
     }
-    DBG_PRINTLN("[ESPNOW][CMD] LOCK_SCREW -> Motor Lock (op=0x01)");
+   // DBG_PRINTLN("[ESPNOW][CMD] LOCK_SCREW -> Motor Lock (op=0x01)");
     pendingForceAck_ = 0;
     dispatchTransport(Module::Motor, /*op*/0x01, {}, "LOCK_SCREW");
     // ACK will be emitted by Device on completion.
@@ -400,33 +396,33 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
   }
   if (opcode == CMD_UNLOCK_SCREW) {
     if (IS_SLAVE_ALARM) {
-      DBG_PRINTLN("[ESPNOW][CMD] UNLOCK_SCREW -> ignored (alarm role)");
+     // DBG_PRINTLN("[ESPNOW][CMD] UNLOCK_SCREW -> ignored (alarm role)");
       SendAck(ACK_ERR_POLICY, false);
       return;
     }
-    DBG_PRINTLN("[ESPNOW][CMD] UNLOCK_SCREW -> Motor Unlock (op=0x02)");
+   // DBG_PRINTLN("[ESPNOW][CMD] UNLOCK_SCREW -> Motor Unlock (op=0x02)");
     pendingForceAck_ = 0;
     dispatchTransport(Module::Motor, /*op*/0x02, {}, "UNLOCK_SCREW");
     return;
   }
   if (opcode == CMD_FORCE_LOCK) {
     if (IS_SLAVE_ALARM) {
-      DBG_PRINTLN("[ESPNOW][CMD] FORCE_LOCK -> ignored (alarm role)");
+     // DBG_PRINTLN("[ESPNOW][CMD] FORCE_LOCK -> ignored (alarm role)");
       SendAck(ACK_ERR_POLICY, false);
       return;
     }
-    DBG_PRINTLN("[ESPNOW][CMD] FORCE_LOCK -> Motor Lock (op=0x01)");
+    //DBG_PRINTLN("[ESPNOW][CMD] FORCE_LOCK -> Motor Lock (op=0x01)");
     pendingForceAck_ = 1;
     dispatchTransport(Module::Motor, /*op*/0x01, {}, "FORCE_LOCK");
     return;
   }
   if (opcode == CMD_FORCE_UNLOCK) {
     if (IS_SLAVE_ALARM) {
-      DBG_PRINTLN("[ESPNOW][CMD] FORCE_UNLOCK -> ignored (alarm role)");
+    //  DBG_PRINTLN("[ESPNOW][CMD] FORCE_UNLOCK -> ignored (alarm role)");
       SendAck(ACK_ERR_POLICY, false);
       return;
     }
-    DBG_PRINTLN("[ESPNOW][CMD] FORCE_UNLOCK -> Motor Unlock (op=0x02)");
+   // DBG_PRINTLN("[ESPNOW][CMD] FORCE_UNLOCK -> Motor Unlock (op=0x02)");
     pendingForceAck_ = 2;
     dispatchTransport(Module::Motor, /*op*/0x02, {}, "FORCE_UNLOCK");
     return;
@@ -437,7 +433,7 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
       opcode == CMD_CAP_SHOCK_ON|| opcode == CMD_CAP_SHOCK_OFF||
       opcode == CMD_CAP_REED_ON || opcode == CMD_CAP_REED_OFF ||
       opcode == CMD_CAP_FP_ON   || opcode == CMD_CAP_FP_OFF) {
-    DBG_PRINTLN("[ESPNOW][CMD] CAP* -> Device CapsSet (op=0x07)");
+    //DBG_PRINTLN("[ESPNOW][CMD] CAP* -> Device CapsSet (op=0x07)");
     uint8_t current = getCapBits_();
     uint8_t bits = capBitsFromCmd(opcode, current);
     setCapBitsShadow_(bits);
@@ -448,11 +444,11 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
   // Lock driver mode (screw vs electromagnet) -> Device NvsWrite(LOCK_EMAG_KEY)
   if (opcode == CMD_LOCK_EMAG_ON) {
     if (IS_SLAVE_ALARM) {
-      DBG_PRINTLN("[ESPNOW][CMD] LOCK_EMAG_ON -> ignored (alarm role)");
+     // DBG_PRINTLN("[ESPNOW][CMD] LOCK_EMAG_ON -> ignored (alarm role)");
       SendAck(ACK_ERR_POLICY, false);
       return;
     }
-    DBG_PRINTLN("[ESPNOW][CMD] LOCK_EMAG_ON -> Device NvsWrite keyId=7 (LOCK_EMAG_KEY=true)");
+   // DBG_PRINTLN("[ESPNOW][CMD] LOCK_EMAG_ON -> Device NvsWrite keyId=7 (LOCK_EMAG_KEY=true)");
     std::vector<uint8_t> payloadVec = {7u, 1u};
     pendingLockEmag_ = 1;
     dispatchTransport(Module::Device, /*op*/0x0C, payloadVec, "LOCK_EMAG_ON");
@@ -460,11 +456,11 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
   }
   if (opcode == CMD_LOCK_EMAG_OFF) {
     if (IS_SLAVE_ALARM) {
-      DBG_PRINTLN("[ESPNOW][CMD] LOCK_EMAG_OFF -> ignored (alarm role)");
+    //  DBG_PRINTLN("[ESPNOW][CMD] LOCK_EMAG_OFF -> ignored (alarm role)");
       SendAck(ACK_ERR_POLICY, false);
       return;
     }
-    DBG_PRINTLN("[ESPNOW][CMD] LOCK_EMAG_OFF -> Device NvsWrite keyId=7 (LOCK_EMAG_KEY=false)");
+   // DBG_PRINTLN("[ESPNOW][CMD] LOCK_EMAG_OFF -> Device NvsWrite keyId=7 (LOCK_EMAG_KEY=false)");
     std::vector<uint8_t> payloadVec = {7u, 0u};
     pendingLockEmag_ = 0;
     dispatchTransport(Module::Device, /*op*/0x0C, payloadVec, "LOCK_EMAG_OFF");
@@ -484,18 +480,18 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
         opcode == CMD_FP_ADOPT_SENSOR ||
         opcode == CMD_FP_RELEASE_SENSOR;
     if (isFpCmd) {
-      DBG_PRINTLN("[ESPNOW][CMD] FP command ignored (alarm role)");
+   //   DBG_PRINTLN("[ESPNOW][CMD] FP command ignored (alarm role)");
       SendAck(ACK_ERR_POLICY, false);
       return;
     }
   }
   if (opcode == CMD_FP_VERIFY_ON) {
-    DBG_PRINTLN("[ESPNOW][CMD] FP_VERIFY_ON -> VerifyOn (op=0x01)");
+  //  DBG_PRINTLN("[ESPNOW][CMD] FP_VERIFY_ON -> VerifyOn (op=0x01)");
     dispatchTransport(Module::Fingerprint, /*op*/0x01, {}, "FP_VERIFY_ON");
     return;
   }
   if (opcode == CMD_FP_VERIFY_OFF) {
-    DBG_PRINTLN("[ESPNOW][CMD] FP_VERIFY_OFF -> VerifyOff (op=0x02)");
+  //  DBG_PRINTLN("[ESPNOW][CMD] FP_VERIFY_OFF -> VerifyOff (op=0x02)");
     dispatchTransport(Module::Fingerprint, /*op*/0x02, {}, "FP_VERIFY_OFF");
     return;
   }
@@ -505,7 +501,7 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
       SendAck(ACK_UNINTENDED, false);
       return;
     }
-    DBG_PRINTF("[ESPNOW][CMD] ENROLL slot=%u -> Enroll (op=0x03)\n", (unsigned)slotId);
+  //  DBG_PRINTF("[ESPNOW][CMD] ENROLL slot=%u -> Enroll (op=0x03)\n", (unsigned)slotId);
     std::vector<uint8_t> payloadVec{static_cast<uint8_t>(slotId & 0xFF),
                                     static_cast<uint8_t>((slotId >> 8) & 0xFF)};
     dispatchTransport(Module::Fingerprint, /*op*/0x03, payloadVec, "FP_ENROLL");
@@ -517,29 +513,29 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
       SendAck(ACK_UNINTENDED, false);
       return;
     }
-    DBG_PRINTF("[ESPNOW][CMD] FP_DELETE slot=%u -> DeleteId (op=0x04)\n", (unsigned)slotId);
+  //  DBG_PRINTF("[ESPNOW][CMD] FP_DELETE slot=%u -> DeleteId (op=0x04)\n", (unsigned)slotId);
     std::vector<uint8_t> payloadVec{static_cast<uint8_t>(slotId & 0xFF),
                                     static_cast<uint8_t>((slotId >> 8) & 0xFF)};
     dispatchTransport(Module::Fingerprint, /*op*/0x04, payloadVec, "FP_DELETE");
     return;
   }
   if (opcode == CMD_FP_CLEAR_DB) {
-    DBG_PRINTLN("[ESPNOW][CMD] FP_CLEAR_DB -> ClearDb (op=0x05)");
+  //  DBG_PRINTLN("[ESPNOW][CMD] FP_CLEAR_DB -> ClearDb (op=0x05)");
     dispatchTransport(Module::Fingerprint, /*op*/0x05, {}, "FP_CLEAR_DB");
     return;
   }
   if (opcode == CMD_FP_ADOPT_SENSOR) {
-    DBG_PRINTLN("[ESPNOW][CMD] FP_ADOPT -> AdoptSensor (op=0x08)");
+  //  DBG_PRINTLN("[ESPNOW][CMD] FP_ADOPT -> AdoptSensor (op=0x08)");
     dispatchTransport(Module::Fingerprint, /*op*/0x08, {}, "FP_ADOPT");
     return;
   }
   if (opcode == CMD_FP_RELEASE_SENSOR) {
-    DBG_PRINTLN("[ESPNOW][CMD] FP_RELEASE -> ReleaseSensor (op=0x09)");
+  //  DBG_PRINTLN("[ESPNOW][CMD] FP_RELEASE -> ReleaseSensor (op=0x09)");
     dispatchTransport(Module::Fingerprint, /*op*/0x09, {}, "FP_RELEASE");
     return;
   }
 
   // Unknown
-  DBG_PRINTF("[ESPNOW][CMD] Unhandled opcode=0x%04X\n", (unsigned)opcode);
+//  DBG_PRINTF("[ESPNOW][CMD] Unhandled opcode=0x%04X\n", (unsigned)opcode);
   SendAck(ACK_UNINTENDED, false);
 }

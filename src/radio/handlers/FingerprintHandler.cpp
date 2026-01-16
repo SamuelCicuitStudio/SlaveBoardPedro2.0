@@ -14,7 +14,14 @@ static constexpr uint8_t FP_RELEASE       = 0x09;
 
 void FingerprintHandler::onMessage(const transport::TransportMessage& msg) {
   if (!fp_ || !fp_->isSensorPresent()) {
-    sendStatus_(msg, transport::StatusCode::DENIED);
+    sendReasonEvent_(1); // no sensor
+    return;
+  }
+
+  if (fp_->isTampered() &&
+      msg.header.opCode != FP_ADOPT_SENSOR &&
+      msg.header.opCode != FP_RELEASE) {
+    sendReasonEvent_(3); // tamper / foreign token
     return;
   }
 
@@ -63,10 +70,8 @@ void FingerprintHandler::onMessage(const transport::TransportMessage& msg) {
         uint16_t id = 0;
         bool ok = fp_->getNextFreeId(id);
         std::vector<uint8_t> extra;
-        if (ok) {
-          extra.push_back(uint8_t(id & 0xFF));
-          extra.push_back(uint8_t((id >> 8) & 0xFF));
-        }
+        extra.push_back(uint8_t(id & 0xFF));
+        extra.push_back(uint8_t((id >> 8) & 0xFF));
         sendStatus_(msg, ok ? transport::StatusCode::OK : transport::StatusCode::APPLY_FAIL, extra);
       }
       break;
@@ -98,4 +103,17 @@ void FingerprintHandler::sendStatus_(const transport::TransportMessage& req,
   resp.header.payloadLen = static_cast<uint8_t>(resp.payload.size());
 
   if (port_) port_->send(resp, true);
+}
+
+void FingerprintHandler::sendReasonEvent_(uint8_t reason) {
+  if (!port_) return;
+  transport::TransportMessage evt;
+  evt.header.destId = 1; // master
+  evt.header.module = static_cast<uint8_t>(transport::Module::Fingerprint);
+  evt.header.type   = static_cast<uint8_t>(transport::MessageType::Event);
+  evt.header.opCode = 0x0B; // Fail/busy/no-sensor/tamper
+  evt.header.flags  = 0;
+  evt.payload = {reason};
+  evt.header.payloadLen = static_cast<uint8_t>(evt.payload.size());
+  port_->send(evt, true);
 }

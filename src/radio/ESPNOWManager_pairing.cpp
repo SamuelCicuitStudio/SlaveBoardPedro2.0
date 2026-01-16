@@ -14,7 +14,11 @@ constexpr uint8_t kDefaultChannelFallback = 0;
 constexpr uint32_t kPairInitAckDelayMs = 300;
 constexpr size_t kPairInitPayloadLen = sizeof(PairInit);
 
-bool parsePairInit_(const uint8_t* data, size_t len, uint8_t& capsOut, uint32_t& seedOut) {
+bool parsePairInit_(const uint8_t* data,
+                    size_t len,
+                    uint8_t& capsOut,
+                    uint32_t& seedOut,
+                    bool& shockExternalOut) {
   if (!data || len < kPairInitPayloadLen) {
     return false;
   }
@@ -25,12 +29,17 @@ bool parsePairInit_(const uint8_t* data, size_t len, uint8_t& capsOut, uint32_t&
   if ((caps & 0xF0) != 0) {
     return false;
   }
-  const uint32_t seed = (static_cast<uint32_t>(data[2]) << 24) |
-                        (static_cast<uint32_t>(data[3]) << 16) |
-                        (static_cast<uint32_t>(data[4]) << 8)  |
-                        (static_cast<uint32_t>(data[5]) << 0);
+  const uint8_t shockExt = data[2];
+  if (shockExt > 1) {
+    return false;
+  }
+  const uint32_t seed = (static_cast<uint32_t>(data[3]) << 24) |
+                        (static_cast<uint32_t>(data[4]) << 16) |
+                        (static_cast<uint32_t>(data[5]) << 8)  |
+                        (static_cast<uint32_t>(data[6]) << 0);
   capsOut = caps;
   seedOut = seed;
+  shockExternalOut = (shockExt != 0);
   return true;
 }
 
@@ -198,7 +207,8 @@ bool EspNowManager::handlePairInit_(const uint8_t masterMac[6], const uint8_t* d
 
   uint8_t caps = 0;
   uint32_t seed = 0;
-  if (!parsePairInit_(data, len, caps, seed)) {
+  bool shockExternal = true;
+  if (!parsePairInit_(data, len, caps, seed, shockExternal)) {
     return false;
   }
 
@@ -227,6 +237,7 @@ bool EspNowManager::handlePairInit_(const uint8_t masterMac[6], const uint8_t* d
   pendingPairInitChannel_ = channel;
   pendingPairInitCaps_ = caps;
   pendingPairInitSeed_ = seed;
+  pendingPairInitShockExternal_ = shockExternal;
   pendingPairInitAckInFlight_ = false;
   pendingPairInitAckDone_ = false;
   pendingPairInitAckOk_ = false;
@@ -286,6 +297,9 @@ void EspNowManager::finalizePairInit_() {
   CONF->PutBool(HAS_SHOCK_SENSOR_KEY, (pendingPairInitCaps_ & 0x02) != 0);
   CONF->PutBool(HAS_REED_SWITCH_KEY,  (pendingPairInitCaps_ & 0x04) != 0);
   CONF->PutBool(HAS_FINGERPRINT_KEY,  (pendingPairInitCaps_ & 0x08) != 0);
+  const int shockTypeValue =
+      pendingPairInitShockExternal_ ? SHOCK_SENSOR_TYPE_EXTERNAL : SHOCK_SENSOR_TYPE_INTERNAL;
+  CONF->PutInt(SHOCK_SENSOR_TYPE_KEY, shockTypeValue);
   CONF->PutBool(DEVICE_CONFIGURED, true);
   CONF->PutBool(ARMED_STATE, false);
   CONF->PutBool(MOTION_TRIG_ALARM, false);
@@ -326,6 +340,7 @@ void EspNowManager::clearPendingPairInit_(const char* reason, bool removePeer) {
   pendingPairInitAckOk_ = false;
   pendingPairInitAckDoneMs_ = 0;
   memset(pendingPairInitMac_, 0, sizeof(pendingPairInitMac_));
+  pendingPairInitShockExternal_ = true;
 }
 
 void EspNowManager::pollPairing_() {
