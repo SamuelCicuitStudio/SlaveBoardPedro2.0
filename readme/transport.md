@@ -2,6 +2,15 @@
 
 Transport sits above the unchanged `EspNowManager` and below application modules owned by `Device` (Motor, Shock, Switch/Reed, Fingerprint, Power, Sleep). Modules never touch MAC addresses or ESP-NOW APIs; they only see transport messages.
 
+## Behavior notes (for compatibility)
+
+Transport is protocol-only; policy lives in the modules. Still, for master compatibility:
+
+- While armed, keep reporting activity (reed/shock/button/fingerprint) so the master can decide policy.
+- Never unlock locally while armed (open button and fingerprint only generate requests/events).
+- In Test Mode (`CMD_ENTER_TEST_MODE`), do not raise breach/alarm requests, but keep diagnostic events flowing.
+- Fingerprint enrollment must stream stages, and verify and enroll must not overlap.
+
 ## Frame Format
 - Wire = Header (11 bytes) + Payload.
 - Header fields (fixed order):
@@ -66,7 +75,9 @@ Capability bits: bit0=OpenSwitch, bit1=Shock, bit2=Reed, bit3=Fingerprint.
 - 0x02 Unlock (Req/Cmd). Resp: status.
 - 0x03 PulseCCW (Req/Cmd). Resp: status.
 - 0x04 PulseCW (Req/Cmd). Resp: status.
-- 0x05 MotorDone (Event/Resp). Payload: status(u8) + locked(u8). Replaces ACK_LOCKED/ACK_UNLOCKED.
+- 0x05 MotorDone (Event/Resp). Payload: status(u8) + locked(u8).
+  - Transport-level completion event emitted by the slave when the motor finishes.
+  - The ESP-NOW CommandAPI bridge maps this to `ACK_LOCKED` / `ACK_UNLOCKED` for master compatibility, while the master transport stack may also consume `MotorDone` directly.
 
 ### Module 0x03 Shock
 - 0x01 Enable (Req/Cmd). Resp: status.

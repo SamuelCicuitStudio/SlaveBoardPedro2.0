@@ -9,6 +9,11 @@
 #ifndef FINGERPRINT_H
 #define FINGERPRINT_H
 
+// Enable this build for a local fingerprint test harness (serial-only, no transport/ESP-NOW).
+#ifndef FINGERPRINT_TEST_MODE
+#define FINGERPRINT_TEST_MODE 0
+#endif
+
 #include <Arduino.h>
 #include <HardwareSerial.h>
 #include <Adafruit_Fingerprint.h>
@@ -72,6 +77,7 @@ public:
     //   startVerifyMode() will REFUSE to start unless the sensor is trusted.
     void   startVerifyMode();
     void   stopVerifyMode();
+    bool   isVerifyRunning();
     uint8_t verifyFingerprint();
     void   shutdown();  // stop tasks during safe reset
 
@@ -157,6 +163,7 @@ private:
     uint16_t              targetEnrollID_;
     volatile uint8_t      enrollmentState;
     volatile bool         verifyLoopStopFlag;
+    bool                  resumeVerifyAfterEnroll_;
 
     // security state
     bool                  tamperDetected_;

@@ -27,8 +27,15 @@ void FingerprintHandler::onMessage(const transport::TransportMessage& msg) {
 
   switch (msg.header.opCode) {
     case FP_VERIFY_ON:
+      if (fp_->getEnrollmentState() == FP_ENROLL_IN_PROGRESS) {
+        sendReasonEvent_(2); // busy
+        sendStatus_(msg, transport::StatusCode::BUSY);
+        break;
+      }
       fp_->startVerifyMode();
-      sendStatus_(msg, transport::StatusCode::OK);
+      sendStatus_(msg, fp_->isVerifyRunning()
+                           ? transport::StatusCode::OK
+                           : transport::StatusCode::DENIED);
       break;
     case FP_VERIFY_OFF:
       fp_->stopVerifyMode();

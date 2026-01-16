@@ -67,32 +67,50 @@ void Device::pollInputsAndEdges_(bool securityEnabled) {
     static bool openBtnPrev = false;
     if (openBtnNow && !openBtnPrev) {
       if ((ms_() - lastOpenBtnEdgeMs) >= OPEN_DEBOUNCE_MS) {
-        const bool criticalNow = (PowerMgr && (PowerMgr->getPowerMode() == CRITICAL_POWER_MODE));
-        const int  battPct     = PowerMgr ? PowerMgr->getBatteryPercentage() : 100;
-        const bool lowNow      = (!criticalNow && battPct < LOW_BATTERY_PCT);
+        if (configured && armed) {
+          DBG_PRINTLN("[OpenButton] pressed while armed -> report to master only");
+          lastOpenBtnEdgeMs = ms_();
 
-        if (!configured && !isAlarmRole_ && motorDriver && !lowNow && !criticalNow) {
-          // Unpaired bench mode, Lock role only: local motor control, no transport.
-          // Treat button as "open/unlock" request.
-          DBG_PRINTLN("[OpenButton] Unpaired bench mode -> local unlock task");
-          motorDriver->startUnlockTask();
-          if (sleepTimer) sleepTimer->reset();
-        } else {
-          // Paired path: request unlock from master, never local motor.
-          cmd_RequestUnlockIfAllowed_("OpenButton");
-          // Transport: OpenRequest event
+          // Still report the press and unlock attempt so the master can log/deny.
+          requestUnlock_();
           sendTransportEvent_(transport::Module::SwitchReed, /*op*/0x02, {});
-          sendTransportEvent_(transport::Module::Device, /*op*/0x0E, {});
+          sendTransportEvent_(transport::Module::Device,     /*op*/0x0E, {});
 
-          if (criticalNow && configured) {
+          const bool criticalNow = (PowerMgr && (PowerMgr->getPowerMode() == CRITICAL_POWER_MODE));
+          if (criticalNow) {
             vTaskDelay(pdMS_TO_TICKS(200));   // allow TX window
             if (sleepTimer) sleepTimer->goToSleep(); // does not return
           } else {
             if (sleepTimer) sleepTimer->reset();
           }
-        }
+        } else {
+          const bool criticalNow = (PowerMgr && (PowerMgr->getPowerMode() == CRITICAL_POWER_MODE));
+          const int  battPct     = PowerMgr ? PowerMgr->getBatteryPercentage() : 100;
+          const bool lowNow      = (!criticalNow && battPct < LOW_BATTERY_PCT);
 
-        lastOpenBtnEdgeMs = ms_();
+          if (!configured && !isAlarmRole_ && motorDriver && !lowNow && !criticalNow) {
+            // Unpaired bench mode, Lock role only: local motor control, no transport.
+            // Treat button as "open/unlock" request.
+            DBG_PRINTLN("[OpenButton] Unpaired bench mode -> local unlock task");
+            motorDriver->startUnlockTask();
+            if (sleepTimer) sleepTimer->reset();
+          } else {
+            // Paired path: request unlock from master, never local motor.
+            cmd_RequestUnlockIfAllowed_("OpenButton");
+            // Transport: OpenRequest event
+            sendTransportEvent_(transport::Module::SwitchReed, /*op*/0x02, {});
+            sendTransportEvent_(transport::Module::Device, /*op*/0x0E, {});
+
+            if (criticalNow && configured) {
+              vTaskDelay(pdMS_TO_TICKS(200));   // allow TX window
+              if (sleepTimer) sleepTimer->goToSleep(); // does not return
+            } else {
+              if (sleepTimer) sleepTimer->reset();
+            }
+          }
+
+          lastOpenBtnEdgeMs = ms_();
+        }
       }
     }
     openBtnPrev = openBtnNow;
@@ -225,8 +243,9 @@ void Device::raiseBreachIfNeeded_() {
   const bool doorOpenHw = isDoorOpen_();
   const bool doorOpen   = hasReed_ ? doorOpenHw : false;
 
-  // Breach rule (both roles): Armed & reed->open, independent of lock state.
-  const bool breachCondition = doorOpen;
+  // Breach rule (both roles): Armed & LOCK_STATE=locked & reed->open.
+  const bool locked = isLocked_();
+  const bool breachCondition = locked && doorOpen;
 
   if (breachCondition && !Now->breach) {
     DBG_PRINTLN("[Breach] Door opened while supposed to be locked -> report to master");

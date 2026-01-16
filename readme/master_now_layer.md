@@ -1,23 +1,18 @@
-# Master ESP-NOW Layer (implementation notes for slave)
+# Master ESP-NOW Layer (compatibility notes for slave)
 
-This document summarizes how the master ESP-NOW layer is implemented in
-`MasterFixLast/src/now` and related code, plus the policy readmes in
-`MasterFixLast/readme`. It is intended as the compatibility checklist for the
-slave ESP-NOW layer. The slave should reuse the same `CommandAPI.hpp` contract.
+This document summarizes the master-side ESP-NOW contract the slave must satisfy (pairing, wire format, required ACKs/EVTs). The master firmware itself is not part of this repository; use this as a compatibility checklist.
+
+## Key behavior expectations
+
+- While armed, the slave reports door/button/shock/fingerprint activity, but it does not unlock locally; the master decides policy.
+- The master typically uses `CMD_DISABLE_MOTION` (driver near) and `CMD_ENABLE_MOTION` (driver far) to control motion/impact alarm behavior.
+- Test Mode (`CMD_ENTER_TEST_MODE`) disables alarm escalation but keeps diagnostics (reed/shock/fingerprint) flowing.
+- Fingerprint enrollment should stream stages (start -> cap1 -> lift -> cap2 -> storing -> result).
 
 ## Scope and sources
-- Code: `MasterFixLast/src/now/*` (NowConfig, NowProtocol, NowCore*, NowPipeline*,
-  NowTransport*, NowManager*).
-- Supporting: `MasterFixLast/src/api/CommandAPI.hpp`,
-  `MasterFixLast/src/application/SecurityKeys.hpp`,
-  `MasterFixLast/src/application/ConfigNvs.hpp`,
-  `MasterFixLast/src/application/DeviceManager.cpp`.
-- Policies: `MasterFixLast/readme/espnowPolicy.md`,
-  `MasterFixLast/readme/security.md`,
-  `MasterFixLast/readme/securityNow.md`,
-  `MasterFixLast/readme/livenessPolicy.md`,
-  `MasterFixLast/readme/behaviorSlave.md`,
-  `MasterFixLast/readme/espnow_device_requirements.md`.
+
+- Wire format + opcodes: `src/api/CommandAPI.hpp` (this repo).
+- Behavior overview: `readme/behavior.md`, `readme/device.md`, `readme/fingerprint.md`, `readme/transport.md`.
 
 ## Command vocabulary and wire format
 - All ESP-NOW frames are binary and use hex opcodes defined in `src/api/CommandAPI.hpp`.
