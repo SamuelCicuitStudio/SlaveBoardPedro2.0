@@ -143,7 +143,7 @@ Capability bits: bit0=OpenSwitch, bit1=Shock, bit2=Reed, bit3=Fingerprint.
 ## Wiring (device)
 - `TransportManager` owns `EspNowAdapter` and `TransportPort` (selfId=2). `tick()` is called from `Device::loop()`. `onRadioReceive` is hooked from `EspNowManager::onDataReceived`.
 - Handlers registered: `DeviceHandler`, `FingerprintHandler`, `MotorHandler` (or stub on alarm-only), `ShockHandler`.
-- Device emits Events: door edges/state, motor done, unlock requests, alarm requests (breach/shock), driver-far, LockCanceled, AlarmOnlyMode, Breach set/clear, CriticalPower/Power low, shock trigger.
+- Device emits Events: door edges/state, motor done, unlock requests, alarm requests (breach/shock), driver-far, LockCanceled/AlarmOnlyMode (Lock role only), Breach set/clear, CriticalPower/Power low, shock trigger.
 - Fingerprint emits Match/Fail/Broadcast/BUSY/NoSensor/Tamper events, EnrollProgress, Adopt/Release, DB info/NextId responses. Commands are handled in `FingerprintHandler`.
 - DeviceHandler covers all Device opcodes listed above, including pairing, config mode, arm/disarm, reboot, caps set/query, cancel timers, role, NVS writes, heartbeat/ping/state/caps queries.
 

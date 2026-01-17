@@ -129,11 +129,13 @@ void Device::enforcePowerPolicy_() {
     // Paired critical path: announce only once per entry into Critical
     if (!prevCriticalOverlay) {
       DBG_PRINTLN("[Power] Critical battery (PAIRED) -> announce + sleep mode");
-      sendAck_(ACK_LOCK_CANCELED,     /*criticalNow=*/true);
-      sendAck_(ACK_ALARM_ONLY_MODE,   /*criticalNow=*/true);
       uint8_t pct = (uint8_t)battPct;
-      sendTransportEvent_(transport::Module::Device, /*op*/0x11, {1}); // LockCanceled critical
-      sendTransportEvent_(transport::Module::Device, /*op*/0x12, {1}); // AlarmOnlyMode critical
+      if (!isAlarmRole_) {
+        sendAck_(ACK_LOCK_CANCELED,     /*criticalNow=*/true);
+        sendAck_(ACK_ALARM_ONLY_MODE,   /*criticalNow=*/true);
+        sendTransportEvent_(transport::Module::Device, /*op*/0x11, {1}); // LockCanceled critical
+        sendTransportEvent_(transport::Module::Device, /*op*/0x12, {1}); // AlarmOnlyMode critical
+      }
       sendTransportEvent_(transport::Module::Device, /*op*/0x14, {pct});
       sendTransportEvent_(transport::Module::Power,  /*op*/0x03, {pct});
     }
@@ -184,11 +186,13 @@ void Device::enforcePowerPolicy_() {
           DBG_PRINTLN("[Device] (UNPAIRED) low battery -> FP disabled (local only)");
         }
       } else {
-        const bool criticalFlag = false;
-        sendAck_(ACK_LOCK_CANCELED,   criticalFlag);
-        sendAck_(ACK_ALARM_ONLY_MODE, criticalFlag);
-        sendTransportEvent_(transport::Module::Device, /*op*/0x11, {0});
-        sendTransportEvent_(transport::Module::Device, /*op*/0x12, {0});
+        if (!isAlarmRole_) {
+          const bool criticalFlag = false;
+          sendAck_(ACK_LOCK_CANCELED,   criticalFlag);
+          sendAck_(ACK_ALARM_ONLY_MODE, criticalFlag);
+          sendTransportEvent_(transport::Module::Device, /*op*/0x11, {0});
+          sendTransportEvent_(transport::Module::Device, /*op*/0x12, {0});
+        }
         sendTransportEvent_(transport::Module::Power,  /*op*/0x02, {uint8_t(battPct)});
       }
     }

@@ -47,7 +47,7 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 - DriverFar: lock role only, paired+armed+doorOpen+!locked, rate-limited.
 - Open button (lock role, hasOpenSwitch_): OpenRequest + UnlockRequest; no local motor when paired. While armed, the press is still reported so the master can log/deny. In critical power, short TX window then sleep.
 - Fingerprint (lock role with FP): match/fail/tamper/busy/no-sensor events, enroll progress, adopt/release, DB info/next ID. If tampered, fingerprint is disabled and reported to the master unless the master explicitly sends adopt/release.
-- Low/Critical power (paired): emit LockCanceled (critical flag), AlarmOnlyMode, CriticalPower, Power Low/Critical events then sleep. Unpaired critical -> deep sleep; unpaired low -> disable FP then sleep.
+- Low/Critical power (paired): **Lock role only** emits LockCanceled (critical flag) + AlarmOnlyMode; both roles emit CriticalPower/Power Low or Critical events then sleep. Unpaired critical -> deep sleep; unpaired low -> disable FP then sleep.
 
 ## Battery and sleep
 
