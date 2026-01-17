@@ -130,7 +130,8 @@ void SleepTimer::goToSleep() {
         (CONF && CONF->GetBool(HAS_REED_SWITCH_KEY, HAS_REED_SWITCH_DEFAULT));
 
     const bool hasOpenBtn =
-        (CONF && CONF->GetBool(HAS_OPEN_SWITCH_KEY, HAS_OPEN_SWITCH_DEFAULT));
+        (!IS_SLAVE_ALARM &&
+         CONF && CONF->GetBool(HAS_OPEN_SWITCH_KEY, HAS_OPEN_SWITCH_DEFAULT));
 
     const bool hasShock =
         (CONF && CONF->GetBool(HAS_SHOCK_SENSOR_KEY, HAS_SHOCK_SENSOR_DEFAULT));

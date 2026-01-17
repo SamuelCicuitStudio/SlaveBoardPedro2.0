@@ -70,7 +70,7 @@
 
 // ---------------------------
 // Storage helpers
-// ---------------------------
+// --------------------------- 
 #define CONFIG_PARTITION        "config"
 #define LOGFILE_PATH            "/Log/log.json"
 

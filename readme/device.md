@@ -14,7 +14,7 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 ## Roles and capability gating
 
 - Lock role (`IS_SLAVE_ALARM=false`): HAS_* gates decide open button, shock, reed, fingerprint. Motor and FP are constructed only if present.
-- Alarm role (`IS_SLAVE_ALARM=true`): motor/open/fingerprint are hard-disabled; shock and reed are forced enabled. Motor/FP objects are not constructed, motor commands are stubbed (UNSUPPORTED), and motor-style events are suppressed.
+- Alarm role (`IS_SLAVE_ALARM=true`): motor/open/fingerprint are hard-disabled; shock and reed are forced enabled. Motor/FP objects are not constructed, motor commands are stubbed (UNSUPPORTED), and motor-style events are suppressed. Open switch input and wake are disabled (ignores `HAS_OPEN_SWITCH_KEY`).
 
 ## Pairing and transport
 
@@ -45,7 +45,7 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 - Shock (hasShock_, motion enabled; Config Mode always reports): Shock Trigger; AlarmRequest(reason=shock) only when armed.
 - Breach (paired, armed): Lock role uses `LOCK_STATE=true` + door open; Alarm role uses door open while armed. Emits AlarmRequest(reason=breach) + Breach set; cleared only by `CMD_CLEAR_ALARM`.
 - DriverFar: lock role only, paired+armed+doorOpen+!locked, rate-limited.
-- Open button (lock role, hasOpenSwitch_): OpenRequest + UnlockRequest; no local motor when paired. While armed, the press is still reported so the master can log/deny. In critical power, short TX window then sleep.
+- Open button (lock role, hasOpenSwitch_): OpenRequest + UnlockRequest; no local motor when paired. While armed, the press is still reported so the master can log/deny. In critical power, short TX window then sleep after grace when safe (motor not moving). Unpaired Good bench mode toggles local lock/unlock based on `LOCK_STATE`. Alarm role ignores the open switch entirely (no input, no wake source).
 - Fingerprint (lock role with FP): match/fail/tamper/busy/no-sensor events, enroll progress, adopt/release, DB info/next ID. If tampered, fingerprint is disabled and reported to the master unless the master explicitly sends adopt/release.
 - Low/Critical power (paired): **Lock role only** emits LockCanceled (critical flag) + AlarmOnlyMode; both roles emit CriticalPower/Power Low or Critical events then sleep. Unpaired critical -> deep sleep; unpaired low -> disable FP then sleep.
 

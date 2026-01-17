@@ -32,13 +32,17 @@ void SwitchManager::begin() {
     pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
     pinMode(USER_BUTTON_PIN, INPUT_PULLUP);
     pinMode(REED_SWITCH_PIN, INPUT_PULLUP);
-    pinMode(OPEN_SWITCH_PIN, INPUT_PULLUP);
+    if (!IS_SLAVE_ALARM) {
+        pinMode(OPEN_SWITCH_PIN, INPUT_PULLUP);
+    }
 
 #ifdef ARDUINO_ARCH_ESP32
     // Fast edge detection on door reed and open button.
     // ISR only sets flags; actual logic stays in isDoorOpen()/isOpenButtonPressed().
     attachInterrupt(digitalPinToInterrupt(REED_SWITCH_PIN),  SwitchManager::doorIsrThunk_, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(OPEN_SWITCH_PIN),  SwitchManager::openIsrThunk_, CHANGE);
+    if (!IS_SLAVE_ALARM) {
+        attachInterrupt(digitalPinToInterrupt(OPEN_SWITCH_PIN),  SwitchManager::openIsrThunk_, CHANGE);
+    }
 #endif
 }
 
@@ -48,7 +52,9 @@ void SwitchManager::begin() {
 void SwitchManager::service() {
     // Maintain door & open-button overlays on edges
     (void)isDoorOpen();
-    (void)isOpenButtonPressed();
+    if (!IS_SLAVE_ALARM) {
+        (void)isOpenButtonPressed();
+    }
 
     // Handle BOOT button tap/hold state machine
     handleBootTapHold_();
@@ -87,6 +93,9 @@ bool SwitchManager::isDoorOpen() {
 // Open button (active-low: LOW=pressed) — overlay on rising edge
 // ------------------------------------------------------------
 bool SwitchManager::isOpenButtonPressed() {
+    if (IS_SLAVE_ALARM) {
+        return false;
+    }
     const bool pressed = (digitalRead(OPEN_SWITCH_PIN) == LOW);
 
     if (pressed && !lastOpenBtn_) {

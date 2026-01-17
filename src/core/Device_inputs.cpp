@@ -66,32 +66,29 @@ void Device::pollInputsAndEdges_(bool securityEnabled) {
     static bool openBtnPrev = false;
     if (openBtnNow && !openBtnPrev) {
       if ((ms_() - lastOpenBtnEdgeMs) >= OPEN_DEBOUNCE_MS) {
+        const bool criticalNow = (effectiveBand_ == 2);
+        const bool lowNow      = (effectiveBand_ == 1);
+        bool sentTx = false;
+
         if (configured && armed) {
           DBG_PRINTLN("[OpenButton] pressed while armed -> report to master only");
-          lastOpenBtnEdgeMs = ms_();
 
           // Still report the press and unlock attempt so the master can log/deny.
           sendTransportEvent_(transport::Module::SwitchReed, /*op*/0x02, {});
           sendTransportEvent_(transport::Module::Device,     /*op*/0x0E, {});
-
-          const bool criticalNow = (PowerMgr && (PowerMgr->getPowerMode() == CRITICAL_POWER_MODE));
-          if (criticalNow) {
-            vTaskDelay(pdMS_TO_TICKS(200));   // allow TX window
-            if (sleepTimer) sleepTimer->goToSleep(); // does not return
-          } else {
-            if (sleepTimer) sleepTimer->reset();
-          }
+          sentTx = true;
         } else {
-          const bool criticalNow = (PowerMgr && (PowerMgr->getPowerMode() == CRITICAL_POWER_MODE));
-          const int  battPct     = PowerMgr ? PowerMgr->getBatteryPercentage() : 100;
-          const bool lowNow      = (!criticalNow && battPct < LOW_BATTERY_PCT);
-
           if (!configured && !isAlarmRole_ && motorDriver && !lowNow && !criticalNow) {
             // Unpaired bench mode, Lock role only: local motor control, no transport.
-            // Treat button as "open/unlock" request.
-            DBG_PRINTLN("[OpenButton] Unpaired bench mode -> local unlock task");
-            motorDriver->startUnlockTask();
-            if (sleepTimer) sleepTimer->reset();
+            // Toggle lock/unlock based on current LOCK_STATE.
+            const bool lockedNow = isLocked_();
+            if (lockedNow) {
+              DBG_PRINTLN("[OpenButton] Unpaired bench mode -> local unlock task");
+              motorDriver->startUnlockTask();
+            } else {
+              DBG_PRINTLN("[OpenButton] Unpaired bench mode -> local lock task");
+              motorDriver->startLockTask();
+            }
           } else {
             if (configured) {
               // Paired path: request unlock from master, never local motor.
@@ -99,21 +96,21 @@ void Device::pollInputsAndEdges_(bool securityEnabled) {
               // Transport: OpenRequest event
               sendTransportEvent_(transport::Module::SwitchReed, /*op*/0x02, {});
               sendTransportEvent_(transport::Module::Device, /*op*/0x0E, {});
-
-              if (criticalNow) {
-                vTaskDelay(pdMS_TO_TICKS(200));   // allow TX window
-                if (sleepTimer) sleepTimer->goToSleep(); // does not return
-              } else {
-                if (sleepTimer) sleepTimer->reset();
-              }
+              sentTx = true;
             } else {
               DBG_PRINTLN("[OpenButton] Unpaired -> no transport request");
-              if (sleepTimer) sleepTimer->reset();
             }
           }
-
-          lastOpenBtnEdgeMs = ms_();
         }
+        if (criticalNow && sentTx) {
+          vTaskDelay(pdMS_TO_TICKS(200));   // allow TX window
+        }
+        if (sleepTimer) sleepTimer->reset();
+        if (criticalNow) {
+          // Honor safe-to-sleep rules (grace + motor not moving) via power policy.
+          enforcePowerPolicy_();
+        }
+        lastOpenBtnEdgeMs = ms_();
       }
     }
     openBtnPrev = openBtnNow;
@@ -215,10 +212,6 @@ void Device::cmd_LockIfSafeAndAck_(const char* src) {
   }
 
   DBG_PRINTLN(String("[Action-BLOCKED] ") + src + " (paired) -> master lock request only");
-
-  const bool criticalNow = (PowerMgr && (PowerMgr->getPowerMode() == CRITICAL_POWER_MODE));
-  sendTransportEvent_(transport::Module::Device, /*op*/0x11, {static_cast<uint8_t>(criticalNow)});
-  sendTransportEvent_(transport::Module::Device, /*op*/0x12, {static_cast<uint8_t>(criticalNow)});
 }
 
 void Device::cmd_RequestUnlockIfAllowed_(const char* src) {
