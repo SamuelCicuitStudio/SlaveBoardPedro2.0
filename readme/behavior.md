@@ -6,7 +6,7 @@ This document teaches an LLM how to **reason about and describe** the device's r
 
 ## Key behavior summary (authoritative)
 
-- **Breach**: Lock role -> `ARMED_STATE=true` + `LOCK_STATE=true` + door open; Alarm role -> `ARMED_STATE=true` + door open (lock state ignored).
+- **Breach (paired, Good battery)**: Lock role -> `ARMED_STATE=true` + `LOCK_STATE=true` + door open; Alarm role -> `ARMED_STATE=true` + door open (lock state ignored).
 - **Open button while armed**: the press is still reported to the master, but the slave never unlocks locally.
 - **Disarm vs clear**: `CMD_DISARM_SYSTEM` prevents new alarm escalation; an active alarm/breach is cleared only by `CMD_CLEAR_ALARM`.
 - **Breach persistence**: breach state is latched in NVS and survives reboot until the master clears it.
@@ -71,8 +71,8 @@ This document teaches an LLM how to **reason about and describe** the device's r
 - Considers only: **reed** + **shock**.
 - **Motor/open/fingerprint are disabled** (commands return UNSUPPORTED; signals ignored).
 - **Breach definition**:
-  - **Lock role**: Armed + `LOCK_STATE=true` + reed->open -> breach.
-  - **Alarm role**: Armed + reed->open -> breach (lock state ignored).
+  - **Lock role**: Armed + `LOCK_STATE=true` + door open -> breach.
+  - **Alarm role**: Armed + door open -> breach (lock state ignored).
   - **Operational note**: in Alarm role the master must disarm before opening; any door open while Armed is a breach.
 
 ---
@@ -130,8 +130,9 @@ This document teaches an LLM how to **reason about and describe** the device's r
   **not** the same as arming/disarming.
 - **Security logic runs only when Armed** (shock/breach), **except** in Config Mode where security is forced off.
 - **Breach rules**:
-  - **Lock role**: _reed->open while Armed_ -> breach **only if** `LOCK_STATE=true` (expected locked).
-  - **Alarm role**: _reed->open while Armed_ -> breach (lock state ignored).
+  - **Lock role**: _door open while Armed_ -> breach **only if** `LOCK_STATE=true` (expected locked).
+  - **Alarm role**: _door open while Armed_ -> breach (lock state ignored).
+  - Applies only when **Paired** and battery is **Good** (Low/Critical suppress new breach).
 
 ---
 
@@ -222,11 +223,11 @@ This document teaches an LLM how to **reason about and describe** the device's r
   - **Never** emit `MotorDone` just because the door/reed changed; door visibility uses `DoorOpen`/`DoorClosed` + `StateReport`.
   - When **Low**/**Critical**, the slave still accepts motor commands; the master must avoid sending them. `LockCanceled`/`AlarmOnlyMode` overlays are emitted on band entry.
 
-- **Breach (Armed)**: when `LOCK_STATE=true` and the reed reports open, raise `AlarmRequest(reason=breach)` and set `breach` in `StateReport` (cleared only by `CMD_CLEAR_ALARM`).
+- **Breach (Armed)**: when **Paired**, battery **Good**, `LOCK_STATE=true`, and the door is open (reed), raise `AlarmRequest(reason=breach)` and set `breach` in `StateReport` (cleared only by `CMD_CLEAR_ALARM`).
 
 ### Alarm role - specifics
 
-- **Breach (Armed)**: reed open while Armed -> `AlarmRequest(reason=breach)`; `breach` stays set until `CMD_CLEAR_ALARM` (lock state ignored).
+- **Breach (Armed)**: when **Paired** and battery **Good**, door open while Armed -> `AlarmRequest(reason=breach)`; `breach` stays set until `CMD_CLEAR_ALARM` (lock state ignored).
 - **Operational note**: the master must disarm before opening; opening while Armed always triggers breach.
 - **Motor/open/fingerprint**: commands return **UNSUPPORTED**; no related events are generated.
 - The `locked` field is the persisted expectation (`LOCK_STATE`); it does **not** gate breach in Alarm role.
@@ -261,18 +262,118 @@ This document teaches an LLM how to **reason about and describe** the device's r
 
 | Role  | Paired | Config Mode | Battery      | Motor                        | Shock Reports                                   | Breach                | Transport                     |
 | ----- | ------ | ----------- | ------------ | ---------------------------- | ----------------------------------------------- | --------------------- | ----------------------------- |
-| Lock  | No     | N/A         | Good         | **Allowed via button**       | Local only                                      | Local only            | **Pairing only**              |
-| Lock  | No     | N/A         | Low          | **Disabled**                 | Local only                                      | Local only            | **Pairing only**              |
-| Lock  | No     | N/A         | Critical     | **Disabled**                 | Local only                                      | Local only            | **Pairing only**              |
-| Lock  | Yes    | No          | Good         | Allowed by commands          | Armed: Shock+AlarmRequest; Disarmed: Shock-only | **Armed & locked & reed->open** | **Yes**                       |
-| Lock  | Yes    | **Yes**     | Good         | Allowed by commands          | **Shock-only** (diagnostic)                     | **No breach**         | **Yes**                       |
-| Lock  | Yes    | Any         | **Low**      | Master-gated (no local block) | Reported; **no AlarmRequest**                  | **No breach**         | **Yes**, then sleep           |
-| Lock  | Yes    | Any         | **Critical** | Master-gated (no local block) | Reported; **no AlarmRequest**                  | **No breach**         | **Yes**, then immediate sleep |
-| Alarm | No     | N/A         | Any          | N/A                          | Local only                                      | Local only            | **Pairing only**              |
-| Alarm | Yes    | No          | Good         | N/A                          | Armed: Shock+AlarmRequest; Disarmed: Shock-only | **Armed & reed->open**          | **Yes**                       |
-| Alarm | Yes    | **Yes**     | Good         | N/A                          | **Shock-only** (diagnostic)                     | **No breach**         | **Yes**                       |
-| Alarm | Yes    | Any         | **Low**      | N/A                          | Reported; **no AlarmRequest**                   | **No breach**         | **Yes**, then sleep           |
-| Alarm | Yes    | Any         | **Critical** | N/A                          | Reported; **no AlarmRequest**                   | **No breach**         | **Yes**, then immediate sleep |
+| Lock  | No     | N/A         | Good         | **Allowed via button**       | Local only                                      | **Not evaluated**     | **Pairing only**              |
+| Lock  | No     | N/A         | Low          | **Disabled**                 | Local only                                      | **Not evaluated**     | **Pairing only**              |
+| Lock  | No     | N/A         | Critical     | **Disabled**                 | Local only                                      | **Not evaluated**     | **Pairing only**              |
+| Lock  | Yes    | No          | Good         | Allowed by commands          | Armed: Shock+AlarmRequest; Disarmed: Shock-only | **Armed & locked & door open**  | **Yes**                       |
+| Lock  | Yes    | **Yes**     | Good         | Allowed by commands          | **Shock-only** (diagnostic)                     | **Suppressed (Config Mode)** | **Yes**                       |
+| Lock  | Yes    | Any         | **Low**      | Master-gated (no local block) | Reported; **no AlarmRequest**                  | **Suppressed (existing persists)** | **Yes**, then sleep           |
+| Lock  | Yes    | Any         | **Critical** | Master-gated (no local block) | Reported; **no AlarmRequest**                  | **Suppressed (existing persists)** | **Yes**, then immediate sleep |
+| Alarm | No     | N/A         | Any          | N/A                          | Local only                                      | **Not evaluated**     | **Pairing only**              |
+| Alarm | Yes    | No          | Good         | N/A                          | Armed: Shock+AlarmRequest; Disarmed: Shock-only | **Armed & door open**           | **Yes**                       |
+| Alarm | Yes    | **Yes**     | Good         | N/A                          | **Shock-only** (diagnostic)                     | **Suppressed (Config Mode)** | **Yes**                       |
+| Alarm | Yes    | Any         | **Low**      | N/A                          | Reported; **no AlarmRequest**                   | **Suppressed (existing persists)** | **Yes**, then sleep           |
+| Alarm | Yes    | Any         | **Critical** | N/A                          | Reported; **no AlarmRequest**                   | **Suppressed (existing persists)** | **Yes**, then immediate sleep |
+
+### A2) Explicit role/pairing/battery cases (Config Mode off)
+
+The cases below are exhaustive for Role x Pairing x Battery. They assume `ConfigMode=No` and
+`hasReed_=true`. If `ConfigMode=Yes`, security is forced off (no `AlarmRequest`/breach) while
+pairing rules and transport availability still apply.
+Disarm stops new escalation but does **not** clear an active breach; only `CMD_CLEAR_ALARM` clears it.
+
+#### Lock role
+
+- **Paired + Good**
+  - Transport: normal events/commands.
+  - Door: `DoorOpen`/`DoorClosed` + `StateReport` on edges.
+  - Breach: if Armed and `LOCK_STATE=true` and door open -> `AlarmRequest(reason=breach)` + `Breach set` (latched until `CMD_CLEAR_ALARM`).
+  - Shock: if motion enabled and Armed -> Shock Trigger + `AlarmRequest(reason=shock)`; if Disarmed -> Shock Trigger only.
+  - Motor/Open: commands drive motor; open button sends Open/Unlock requests (no local motor).
+  - Fingerprint: verify active; enroll on command.
+
+- **Paired + Low**
+  - Transport: normal events/commands + power overlays (`LockCanceled`, `AlarmOnlyMode`, `Power LowBatt`).
+  - Breach/AlarmRequest: suppressed; existing breach remains latched.
+  - Shock: Shock Trigger only (if enabled).
+  - Motor/Open: slave still accepts motor commands; master must block them; open button still sends requests.
+  - Fingerprint: disabled; no verify.
+
+- **Paired + Critical**
+  - Transport: normal events/commands + overlays (`LockCanceled`, `AlarmOnlyMode`, `CriticalPower`, `Power CriticalBatt`).
+  - Breach/AlarmRequest: suppressed; existing breach remains latched.
+  - Shock: Shock Trigger only (if enabled).
+  - Motor/Open: slave still accepts motor commands; master must block them; open button still sends requests.
+  - Fingerprint: disabled; no verify.
+  - Sleep: short TX window then sleep after grace when safe.
+
+- **Unpaired + Good**
+  - Transport: pairing-only.
+  - Breach/AlarmRequest: not evaluated (no transport).
+  - Door/Shock: local LED/log only.
+  - Motor/Open: open button drives local unlock task; no transport.
+  - Fingerprint: local only; no transport.
+  - Sleep: normal.
+
+- **Unpaired + Low**
+  - Transport: pairing-only.
+  - Breach/AlarmRequest: not evaluated.
+  - Door/Shock: local only.
+  - Motor/Open: no local motor.
+  - Fingerprint: disabled.
+  - Sleep: after grace when safe.
+
+- **Unpaired + Critical**
+  - Transport: pairing-only.
+  - Breach/AlarmRequest: not evaluated.
+  - Door/Shock: local only.
+  - Motor/Open: no local motor.
+  - Fingerprint: disabled.
+  - Sleep: deep sleep after grace when safe.
+
+#### Alarm role
+
+- **Paired + Good**
+  - Transport: normal events/commands.
+  - Door: `DoorOpen`/`DoorClosed` + `StateReport` on edges.
+  - Breach: if Armed and door open -> `AlarmRequest(reason=breach)` + `Breach set` (latched until `CMD_CLEAR_ALARM`). Master must disarm before opening.
+  - Shock: if motion enabled and Armed -> Shock Trigger + `AlarmRequest(reason=shock)`; if Disarmed -> Shock Trigger only.
+  - Motor/Open/Fingerprint: unsupported/ignored.
+
+- **Paired + Low**
+  - Transport: normal events/commands + power overlays (`Power LowBatt`; `LockCanceled`/`AlarmOnlyMode` may appear but are ignored for Alarm role).
+  - Breach/AlarmRequest: suppressed; existing breach remains latched.
+  - Shock: Shock Trigger only (if enabled).
+  - Motor/Open/Fingerprint: unsupported/ignored.
+  - Sleep: after grace when safe.
+
+- **Paired + Critical**
+  - Transport: normal events/commands + overlays (`CriticalPower`, `Power CriticalBatt`; `LockCanceled`/`AlarmOnlyMode` may appear but are ignored for Alarm role).
+  - Breach/AlarmRequest: suppressed; existing breach remains latched.
+  - Shock: Shock Trigger only (if enabled).
+  - Motor/Open/Fingerprint: unsupported/ignored.
+  - Sleep: short TX window then sleep after grace when safe.
+
+- **Unpaired + Good**
+  - Transport: pairing-only.
+  - Breach/AlarmRequest: not evaluated.
+  - Door/Shock: local only.
+  - Motor/Open/Fingerprint: unsupported/ignored.
+  - Sleep: normal.
+
+- **Unpaired + Low**
+  - Transport: pairing-only.
+  - Breach/AlarmRequest: not evaluated.
+  - Door/Shock: local only.
+  - Motor/Open/Fingerprint: unsupported/ignored.
+  - Sleep: after grace when safe.
+
+- **Unpaired + Critical**
+  - Transport: pairing-only.
+  - Breach/AlarmRequest: not evaluated.
+  - Door/Shock: local only.
+  - Motor/Open/Fingerprint: unsupported/ignored.
+  - Sleep: deep sleep after grace when safe.
 
 ### B) Push-button (Lock role only)
 
@@ -337,7 +438,7 @@ When asked "what happens if...", **always**:
 
 ### Examples
 
-**Example 1 - Alarm role, Paired, Armed, Good battery, reed opens**
+**Example 1 - Alarm role, Paired, Armed, Good battery, door opens**
 
 - Inputs: Role=Alarm, Paired=Yes, ConfigMode=No, Battery=Good, Armed=Yes, Locked=any (ignored)
 - Precedence: none override.
@@ -372,7 +473,7 @@ When asked "what happens if...", **always**:
   **A: No.** Config Mode disables **security**, not **role gating**. Alarm role never has motor/open/fingerprint.
 
 - **Q: What is the breach rule in Alarm role?**
-  **A: Armed & reed->open = breach.** Lock state is ignored because Alarm role has no motor.
+  **A: Armed & door open = breach.** Lock state is ignored because Alarm role has no motor.
 
 - **Q: What is AlarmOnlyMode?**
   **A:** A **battery overlay** emitted on Low/Critical; it tells the master to block motor commands for Lock role. In Alarm role it is informational and can be ignored.
