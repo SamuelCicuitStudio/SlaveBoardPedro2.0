@@ -30,6 +30,33 @@ Note: On the Alarm variant, motor/open/fingerprint capabilities are ignored even
 
 ---
 
+## Practical Use (Unpaired vs Paired)
+
+### Unpaired (bench mode)
+
+- **Transport**: pairing traffic only; no normal commands/events are sent.
+- **Lock variant**:
+  - Open button **wakes** the device (always armed for wake).
+  - If battery is **Good**, open button toggles lock/unlock **locally** (no transport).
+  - Fingerprint verify stays off; if the sensor is already adopted, it is **released to default** at boot so the master can decide adoption later.
+- **Alarm variant**:
+  - External shock pin **wakes** the device (always armed for wake).
+  - Reed/shock activity is local only; no breach is reported while unpaired.
+- **Sleep**: normal battery policy applies; Low/Critical disables local motor and may force sleep after grace.
+
+### Paired (normal mode)
+
+- **Transport**: all events and commands flow between slave and master.
+- **Lock variant**:
+  - Open button sends Open/Unlock requests; **never** unlocks locally when paired.
+  - Master controls motor actions; fingerprint verify/enroll/adopt/release are master-driven.
+- **Alarm variant**:
+  - Door open while Armed triggers breach (lock state ignored).
+  - No motor/open/fingerprint behavior.
+- **Wake sources**: follow master-provided caps (Alarm role still forces reed+shock).
+
+---
+
 ## Buttons (On-device)
 
 ### USER button (`USER_BUTTON_PIN`)
@@ -116,6 +143,7 @@ Tip: If you used triple-tap to disable RGB feedback, the device will keep workin
 If your slave has a fingerprint sensor and it's enabled in the master configuration:
 - The master controls the main flows: enable/disable verify loop, enroll, delete, query DB, adopt/release.
 - During enrollment, the slave streams stage-by-stage progress so the UI can guide the user.
+- When unpaired, an adopted sensor is released to default on boot and verify stays off until the master adopts.
 While armed, fingerprint matches are still reported but never unlock locally.
 
 ---

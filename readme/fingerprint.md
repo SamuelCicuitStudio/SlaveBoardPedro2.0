@@ -9,6 +9,7 @@ This document describes how the fingerprint subsystem is wired, how commands/eve
 - Adopt/Release are explicit master commands; the slave performs the action and replies with an ACK when complete (no extra broadcast event).
 - If tampered (wrong password), fingerprint is disabled and reported to the master until Adopt/Release is performed.
 - In Test Mode (`CMD_ENTER_TEST_MODE`), verify can run for diagnostics and match/fail is streamed to the master.
+- On boot, the sensor is probed to determine adoption state; when **unpaired**, an adopted sensor is automatically **released** to default so the master can decide adoption after pairing.
 
 ## Hardware and role gating
 
@@ -19,6 +20,11 @@ This document describes how the fingerprint subsystem is wired, how commands/eve
 ## Initialization
 
 - `Fingerprint::begin()` probes the sensor without adopting (no password change). If trusted and present, it starts verify mode.
+- Adoption detection is implicit:
+  - **Secret password accepted** -> adopted/trusted.
+  - **Default password accepted** -> unadopted/virgin (treated as untrusted).
+  - **Neither accepted** -> missing or foreign-locked (treated as tampered/untrusted).
+- If `DEVICE_CONFIGURED=false` (unpaired) **and** the sensor is adopted (secret accepted), the slave releases it to the default password at boot and keeps verify off.
 - `refreshCapabilities_()` in Device gates FP creation; alarm role forces FP off.
 
 ## Command handling (transport -> FP)

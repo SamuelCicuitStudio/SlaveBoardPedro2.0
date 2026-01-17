@@ -17,6 +17,10 @@ void Device::refreshCapabilities_() {
   hasReed_        = CONF->GetBool(HAS_REED_SWITCH_KEY,   HAS_REED_SWITCH_DEFAULT);
   hasFingerprint_ = CONF->GetBool(HAS_FINGERPRINT_KEY,   HAS_FINGERPRINT_DEFAULT);
 
+  if (!isAlarmRole_ && !isConfigured_()) {
+    hasOpenSwitch_ = true;
+  }
+
   // Alarm role is a strict subset: reed + shock only.
   if (isAlarmRole_) {
     hasOpenSwitch_    = false;

@@ -129,6 +129,13 @@ void Fingerprint::begin() {
                sensorPresent_ ? 1 : 0,
                tamperDetected_ ? 1 : 0);
     if (ok) {
+        const bool configured = (CONF && CONF->GetBool(DEVICE_CONFIGURED, false));
+        if (!configured) {
+            DBG_PRINTLN("[FP] unpaired -> releasing adopted sensor to default");
+            releaseSensorToDefault();
+            stopVerifyMode();
+            return;
+        }
         startVerifyMode();
     }
 }

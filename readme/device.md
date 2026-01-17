@@ -46,12 +46,13 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 - Breach (paired, armed): Lock role uses `LOCK_STATE=true` + door open; Alarm role uses door open while armed. Emits AlarmRequest(reason=breach) + Breach set; cleared only by `CMD_CLEAR_ALARM`.
 - DriverFar: lock role only, paired+armed+doorOpen+!locked, rate-limited.
 - Open button (lock role, hasOpenSwitch_): OpenRequest + UnlockRequest; no local motor when paired. While armed, the press is still reported so the master can log/deny. In critical power, short TX window then sleep after grace when safe (motor not moving). Unpaired Good bench mode toggles local lock/unlock based on `LOCK_STATE`. Alarm role ignores the open switch entirely (no input, no wake source).
-- Fingerprint (lock role with FP): match/fail/tamper/busy/no-sensor events, enroll progress, adopt/release, DB info/next ID. If tampered, fingerprint is disabled and reported to the master unless the master explicitly sends adopt/release.
+- Fingerprint (lock role with FP): match/fail/tamper/busy/no-sensor events, enroll progress, adopt/release, DB info/next ID. If tampered, fingerprint is disabled and reported to the master unless the master explicitly sends adopt/release. When unpaired at boot, an adopted sensor is released to default and verify stays off until the master adopts.
 - Low/Critical power (paired): **Lock role only** emits LockCanceled (critical flag) + AlarmOnlyMode; both roles emit CriticalPower/Power Low or Critical events then sleep. Unpaired critical -> deep sleep; unpaired low -> disable FP then sleep.
 
 ## Battery and sleep
 
 - `enforcePowerPolicy_()` drives low/critical overlays and sleep. SleepTimer serviced each loop. Critical/unpaired uses deep sleep; paired uses sleep timer after emitting required events.
+- Wake sources are role-aware: in Unpaired mode, lock role always arms the open button for wake, and alarm role always arms the external shock pin for wake. After pairing, wake sources follow the master-provided caps.
 
 ## ESP-NOW / CommandAPI bridge
 

@@ -133,12 +133,20 @@ void SleepTimer::goToSleep() {
 
     const bool hasOpenBtn =
         (!IS_SLAVE_ALARM &&
-         CONF && CONF->GetBool(HAS_OPEN_SWITCH_KEY, HAS_OPEN_SWITCH_DEFAULT));
+         (deviceConfigured
+            ? (CONF && CONF->GetBool(HAS_OPEN_SWITCH_KEY,
+                                     HAS_OPEN_SWITCH_DEFAULT))
+            : true));
 
     const bool hasShock =
-        IS_SLAVE_ALARM ? true
-                       : (CONF && CONF->GetBool(HAS_SHOCK_SENSOR_KEY,
-                                                HAS_SHOCK_SENSOR_DEFAULT));
+        IS_SLAVE_ALARM
+            ? (deviceConfigured
+                   ? (CONF && CONF->GetBool(HAS_SHOCK_SENSOR_KEY,
+                                            HAS_SHOCK_SENSOR_DEFAULT))
+                   : true)
+            : (deviceConfigured &&
+               CONF && CONF->GetBool(HAS_SHOCK_SENSOR_KEY,
+                                     HAS_SHOCK_SENSOR_DEFAULT));
 
     // If reed exists and door is OPEN → don't sleep; reset timer
     if (hasReed) {
@@ -212,6 +220,7 @@ void SleepTimer::goToSleep() {
     // Wake source #2/#3 (EXT1): OPEN button + SHOCK
     uint64_t ext1Mask = 0ULL;
     bool useAnyHigh = false;
+    const bool shockWakeAllowed = hasShock && (deviceConfigured || IS_SLAVE_ALARM);
     bool shockActiveLow = true;
     if (deviceConfigured && hasShock && CONF) {
         const int type =
@@ -225,7 +234,7 @@ void SleepTimer::goToSleep() {
         }
     }
 
-    if (deviceConfigured && hasShock) {
+    if (shockWakeAllowed) {
         ext1Mask |= BUTTON_PIN_BITMASK(WAKE_UP_GPIO_SHOCK_SENSOR1);
         if (shockActiveLow) {
             prep_rtc_input_pullup((gpio_num_t)WAKE_UP_GPIO_SHOCK_SENSOR1);
@@ -251,12 +260,12 @@ void SleepTimer::goToSleep() {
             useAnyHigh ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
         if (useAnyHigh) {
             DBG_PRINTLN("[SLEEP] [Wakeup] EXT1 ANY_HIGH on (SHOCK) armed");
-        } else if (hasOpenBtn && (deviceConfigured && hasShock)) {
-            DBG_PRINTLN("[SLEEP] [Wakeup] EXT1 ALL_LOW on (OPEN button + SHOCK) armed");
-        } else if (hasOpenBtn) {
-            DBG_PRINTLN("[SLEEP] [Wakeup] EXT1 ALL_LOW on (OPEN button) armed");
-        } else {
-            DBG_PRINTLN("[SLEEP] [Wakeup] EXT1 ALL_LOW on (SHOCK) armed");
+    } else if (hasOpenBtn && shockWakeAllowed) {
+        DBG_PRINTLN("[SLEEP] [Wakeup] EXT1 ALL_LOW on (OPEN button + SHOCK) armed");
+    } else if (hasOpenBtn) {
+        DBG_PRINTLN("[SLEEP] [Wakeup] EXT1 ALL_LOW on (OPEN button) armed");
+    } else {
+        DBG_PRINTLN("[SLEEP] [Wakeup] EXT1 ALL_LOW on (SHOCK) armed");
         }
     } else {
         DBG_PRINTLN("[SLEEP] [Wakeup] EXT1 not armed (no eligible pins)");
@@ -273,7 +282,7 @@ void SleepTimer::goToSleep() {
         rtc_gpio_hold_en((gpio_num_t)WAKE_UP_GPIO_OPEN_SWITCH);
         DBG_PRINTLN("[SLEEP] Hold OPEN button pin in RTC domain");
     }
-    if ((deviceConfigured && hasShock) &&
+    if (shockWakeAllowed &&
         rtc_gpio_is_valid_gpio((gpio_num_t)WAKE_UP_GPIO_SHOCK_SENSOR1)) {
         rtc_gpio_hold_en((gpio_num_t)WAKE_UP_GPIO_SHOCK_SENSOR1);
         DBG_PRINTLN("[SLEEP] Hold SHOCK pin in RTC domain");

@@ -7,6 +7,7 @@
 #include <ShockSensor.hpp>
 #include <SleepTimer.hpp>
 #include <SwitchManager.hpp>
+#include <NVSManager.hpp>
 #include <Utils.hpp>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>

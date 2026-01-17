@@ -13,6 +13,7 @@ This document teaches an LLM how to **reason about and describe** the device's r
 - **Driver near/far**: the master uses `CMD_DISABLE_MOTION` (driver near) and `CMD_ENABLE_MOTION` (driver far); driver near must not be treated as a full disarm.
 - **Config Mode / Test Mode**: security off (no breach or `AlarmRequest`), but diagnostic events still flow; fingerprint verify remains active (match/fail streamed).
 - **Fingerprint enrollment**: stage-by-stage feedback and waits for the user (place -> lift -> place again); verify and enroll must not overlap.
+- **Fingerprint (lock role, unpaired boot)**: if the sensor is already adopted (secret password works), the slave releases it to default so the master can decide adoption after pairing; verify stays off after release.
 - **Battery Low/Critical**: suppress `AlarmRequest` and new breach; Lock role emits `LockCanceled`/`AlarmOnlyMode` and disables fingerprint verify; Alarm role does not emit `LockCanceled`/`AlarmOnlyMode`; motor commands are still accepted so the master must block them.
 - **Battery band confirmation**: Low/Critical effects apply only after `BATTERY_BAND_CONFIRM_MS` stable; before that, treat as Good (breach/AlarmRequest can still fire).
 
@@ -86,9 +87,14 @@ This document teaches an LLM how to **reason about and describe** the device's r
   Pair init must carry **caps (u8) + seed (u32, big-endian)** so the slave can
   derive the LMK, switch the peer to encrypted mode, and apply hardware caps after
   `ACK_PAIR_INIT` is confirmed OK.
+- **Unpaired wake overrides**:
+  - Lock role: open button wake is always armed so the button can wake the device.
+  - Alarm role: external shock pin wake is always armed so motion can wake the device.
+- After pairing, wake sources follow the master-provided caps (Alarm role still forces reed+shock).
 - Advertising LED may blink; device sleeps per battery policy.
 - **Lock role only**: if battery is **Good** (confirmed band), the **open button may actuate the motor** locally and toggles lock/unlock based on `LOCK_STATE`.
   If battery is **Low** or **Critical**, local motor is disabled (see section 5).
+- **Fingerprint (lock role)**: on boot, if the sensor is already adopted, the slave releases it to default (no auto-adopt). Verify remains off until the master issues Adopt/Verify commands after pairing.
 
 ### Paired (`DEVICE_CONFIGURED=true`)
 
@@ -260,6 +266,7 @@ as **Good**, so breach/AlarmRequest can still fire.
 
 - `SleepTimer` runs in all modes.
 - **Wake sources**: reed, shock (both roles), open button (Lock role only; ignored in Alarm role even if configured), transport (paired or pairing mode).
+  In Unpaired mode, wake sources are forced for convenience: open button wake is always enabled in Lock role, and shock wake is always enabled in Alarm role (external pin). After pairing, wake sources follow the master-provided caps.
 - Battery bands may force immediate sleep after required transmissions (Paired) or deep sleep (Unpaired Critical).
 
 ---
@@ -326,7 +333,7 @@ Disarm stops new escalation but does **not** clear an active breach; only `CMD_C
   - Breach/AlarmRequest: not evaluated (no transport).
   - Door/Shock: local LED/log only.
   - Motor/Open: open button toggles lock/unlock based on current `LOCK_STATE`; no transport.
-  - Fingerprint: local only; no transport.
+  - Fingerprint: if adopted, auto-release to default on boot; no transport.
   - Sleep: normal.
 
 - **Unpaired + Low**
