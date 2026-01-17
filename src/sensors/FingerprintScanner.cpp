@@ -2,6 +2,7 @@
 #include <ConfigNvs.hpp>
 #include <NVSManager.hpp>
 #include <RGBLed.hpp>
+#include <SecurityKeys.hpp>
 #include <Utils.hpp>
 
 namespace {
@@ -104,6 +105,7 @@ Fingerprint::Fingerprint(MotorDriver* motor,
   sensorPresent_(false),
   enabled_(true),
   supported_(true),
+  secretPassword_(deriveFingerprintSecretFromEfuse_()),
   lastTamperReportMs_(0)
 {
     mtx_ = xSemaphoreCreateRecursiveMutex();
@@ -351,7 +353,7 @@ bool Fingerprint::initSensor_(bool allowAdopt) {
     }
 #else
     // 1) Try with our secret password (trusted path)
-    finger = new Adafruit_Fingerprint(uart, FP_SECRET_PASSWORD);
+    finger = new Adafruit_Fingerprint(uart, secretPassword_);
     finger->begin(baud_);
 
     if (finger->verifyPassword()) {
@@ -368,10 +370,10 @@ bool Fingerprint::initSensor_(bool allowAdopt) {
 
             if (allowAdopt) {
                 // allowed to claim the virgin sensor
-                uint8_t pwResult = tmp->setPassword(FP_SECRET_PASSWORD);
+                uint8_t pwResult = tmp->setPassword(secretPassword_);
                 if (pwResult == FINGERPRINT_OK) {
                     delete finger;
-                    finger = new Adafruit_Fingerprint(uart, FP_SECRET_PASSWORD);
+                    finger = new Adafruit_Fingerprint(uart, secretPassword_);
                     finger->begin(baud_);
                     if (finger->verifyPassword()) {
                         tamperDetected_ = false;

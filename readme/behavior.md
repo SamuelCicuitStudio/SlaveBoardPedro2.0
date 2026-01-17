@@ -14,6 +14,7 @@ This document teaches an LLM how to **reason about and describe** the device's r
 - **Config Mode / Test Mode**: security off (no breach or `AlarmRequest`), but diagnostic events still flow; fingerprint verify remains active (match/fail streamed).
 - **Fingerprint enrollment**: stage-by-stage feedback and waits for the user (place -> lift -> place again); verify and enroll must not overlap.
 - **Fingerprint (lock role, unpaired boot)**: if the sensor is already adopted (secret password works), the slave releases it to default so the master can decide adoption after pairing; verify stays off after release.
+- **Fingerprint secret**: the sensor password is derived from the slave MAC at boot (HMAC-SHA256 with `SECRET_KEY`, salt `"FP-V1"`), cached in RAM, and never stored in NVS.
 - **Battery Low/Critical**: suppress `AlarmRequest` and new breach; Lock role emits `LockCanceled`/`AlarmOnlyMode` and disables fingerprint verify; Alarm role does not emit `LockCanceled`/`AlarmOnlyMode`; motor commands are still accepted so the master must block them.
 - **Battery band confirmation**: Low/Critical effects apply only after `BATTERY_BAND_CONFIRM_MS` stable; before that, treat as Good (breach/AlarmRequest can still fire).
 

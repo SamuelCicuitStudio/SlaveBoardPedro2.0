@@ -29,7 +29,7 @@
  *
  * We only trust a sensor if:
  *   - it physically replied on UART  (sensorPresent_ == true)
- *   - AND it accepts FP_SECRET_PASSWORD (tamperDetected_ == false)
+ *   - AND it accepts the derived per-device password (tamperDetected_ == false)
  *
  * We ONLY run the background verify task if it's trusted.
  *
@@ -44,8 +44,6 @@
  * Master-triggered commands (enroll, adopt, etc.) are allowed to reply
  * immediately via SendAck(), because that's not background spam.
  */
-
-#define FP_SECRET_PASSWORD       0xA1B2C3D4UL  // CHANGE PER PROJECT
 
 class EspNowManager;
 class MotorDriver;
@@ -104,7 +102,7 @@ public:
     void setDeviceConfigured(bool val);
 
     // --- security actions (master commands) ---
-    // Claim a virgin sensor and lock it with FP_SECRET_PASSWORD.
+    // Claim a virgin sensor and lock it with the derived per-device password.
     // Will ONLY restart verify task if adoption actually succeeded.
     transport::StatusCode adoptNewSensor();               // CMD_FP_ADOPT_SENSOR
 
@@ -127,7 +125,7 @@ private:
     //   - probe only, NEVER change password
     // allowAdopt=true:
     //   - allowed to take a default-password sensor,
-    //     set FP_SECRET_PASSWORD, and trust it
+    //     set the derived per-device password, and trust it
     //
     // Updates:
     //   sensorPresent_
@@ -170,6 +168,7 @@ private:
     bool                  resumeVerifyAfterEnroll_;
 
     // security state
+    uint32_t              secretPassword_;
     bool                  tamperDetected_;
     bool                  sensorPresent_;
     bool                  enabled_;

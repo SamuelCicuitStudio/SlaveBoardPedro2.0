@@ -145,6 +145,7 @@ If your slave has a fingerprint sensor and it's enabled in the master configurat
 - The master controls the main flows: enable/disable verify loop, enroll, delete, query DB, adopt/release.
 - During enrollment, the slave streams stage-by-stage progress so the UI can guide the user.
 - When unpaired, an adopted sensor is released to default on boot and verify stays off until the master adopts.
+- The fingerprint password is derived from the slave MAC at boot (not stored in NVS), so each device has its own secret.
 While armed, fingerprint matches are still reported but never unlock locally.
 
 ---

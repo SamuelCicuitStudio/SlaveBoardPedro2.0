@@ -22,6 +22,7 @@
 #define ESPNOW_PMK_HEX "A7F3C91D4E2B86A0D5C8F1B9047E3A6C"
 #endif
 
+#define FP_SECRET_PASSWORD       0xA1B2C3D4UL  // OLD STATIC KEY NOT USED BUT KEPT FOR  LEGACY
 // Security constants
 #define SECRET_KEY "indulock" // Static secret string (used as HMAC key)
 
@@ -83,6 +84,69 @@ static inline bool deriveLmkFromSeed_(const uint8_t masterMac[6],
     mbedtls_platform_zeroize(msg, sizeof(msg));
     mbedtls_platform_zeroize(mac, sizeof(mac));
     return true;
+}
+
+/**
+ * Deterministic fingerprint password from slave MAC:
+ *   FP_PW = Trunc32( HMAC-SHA256( key=SECRET_KEY, msg=slaveMac||"FP-V1" ) )
+ *
+ * - Deterministic per device; not persisted.
+ * - Never returns 0 (reserved for factory default password).
+ */
+static inline uint32_t deriveFingerprintSecretFromMac_(const uint8_t mac[6]) {
+    if (mac == nullptr) {
+        return 0;
+    }
+
+    static const uint8_t salt[] = { 'F','P','-','V','1' };
+
+    uint8_t msg[6 + sizeof(salt)];
+    memcpy(msg, mac, 6);
+    memcpy(msg + 6, salt, sizeof(salt));
+
+    const uint8_t* key = reinterpret_cast<const uint8_t*>(SECRET_KEY);
+    const size_t   keyLen = strlen(SECRET_KEY);
+    if (keyLen == 0) {
+        mbedtls_platform_zeroize(msg, sizeof(msg));
+        return 0;
+    }
+
+    const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (info == nullptr) {
+        mbedtls_platform_zeroize(msg, sizeof(msg));
+        return 0;
+    }
+
+    uint8_t macOut[32];
+    const int rc = mbedtls_md_hmac(info, key, keyLen, msg, sizeof(msg), macOut);
+    if (rc != 0) {
+        mbedtls_platform_zeroize(msg, sizeof(msg));
+        mbedtls_platform_zeroize(macOut, sizeof(macOut));
+        return 0;
+    }
+
+    uint32_t pw = (static_cast<uint32_t>(macOut[0]) << 24) |
+                  (static_cast<uint32_t>(macOut[1]) << 16) |
+                  (static_cast<uint32_t>(macOut[2]) << 8)  |
+                  (static_cast<uint32_t>(macOut[3]) << 0);
+    if (pw == 0) {
+        pw = 0x01010101UL; // avoid factory default
+    }
+
+    mbedtls_platform_zeroize(msg, sizeof(msg));
+    mbedtls_platform_zeroize(macOut, sizeof(macOut));
+    return pw;
+}
+
+// Convenience: derive fingerprint secret from eFuse MAC (stable across reboots).
+static inline uint32_t deriveFingerprintSecretFromEfuse_() {
+    const uint64_t efuse = ESP.getEfuseMac();
+    const uint64_t mac48 = (efuse & 0xFFFFFFFFFFFFULL);
+    uint8_t mac[6];
+    for (int i = 0; i < 6; ++i) {
+        mac[5 - i] = static_cast<uint8_t>((mac48 >> (i * 8)) & 0xFF);
+    }
+    return deriveFingerprintSecretFromMac_(mac);
 }
 
 // Helper: get 12-hex uppercase string of the eFuse MAC (48-bit)
