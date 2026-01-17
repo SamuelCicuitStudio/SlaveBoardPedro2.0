@@ -1,6 +1,7 @@
 #include <Device.hpp>
 #include <CommandAPI.hpp>
 #include <ConfigNvs.hpp>
+#include <FingerprintScanner.hpp>
 #include <NVSManager.hpp>
 #include <PowerManager.hpp>
 #include <SleepTimer.hpp>
@@ -42,6 +43,7 @@ void Device::enforcePowerPolicy_() {
   // ------------------------------
   // 2) Band confirmation (anti-flicker)
   // ------------------------------
+  bool bandChanged = false;
   if (rawBand != effectiveBand_) {
     // New candidate band
     if (pendingBand_ != rawBand) {
@@ -51,6 +53,7 @@ void Device::enforcePowerPolicy_() {
                (nowMs - bandChangeStartMs_) >= BATTERY_BAND_CONFIRM_MS) {
       // Commit the band change after it has been stable long enough
       effectiveBand_     = rawBand;
+      bandChanged        = true;
       bandChangeStartMs_ = 0;
 
       // Track grace + reset latches appropriately
@@ -75,6 +78,12 @@ void Device::enforcePowerPolicy_() {
     // Band stable; clear pending change tracking
     pendingBand_       = rawBand;
     bandChangeStartMs_ = 0;
+  }
+
+  if (bandChanged) {
+    if (Fing) {
+      Fing->setEnabled(effectiveBand_ == 0);
+    }
   }
 
   // If effective band is Good, nothing else to do here.
@@ -120,7 +129,6 @@ void Device::enforcePowerPolicy_() {
     // Paired critical path: announce only once per entry into Critical
     if (!prevCriticalOverlay) {
       DBG_PRINTLN("[Power] Critical battery (PAIRED) -> announce + sleep mode");
-      if (CONF) CONF->PutBool(MOTION_TRIG_ALARM, false);
       sendAck_(ACK_LOCK_CANCELED,     /*criticalNow=*/true);
       sendAck_(ACK_ALARM_ONLY_MODE,   /*criticalNow=*/true);
       uint8_t pct = (uint8_t)battPct;

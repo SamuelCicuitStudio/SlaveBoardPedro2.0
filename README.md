@@ -26,6 +26,7 @@ There are two hardware/firmware variants:
 4. When pairing is complete, the slave will show the paired/online LED pattern and the master should show "paired/configured".
 
 If pairing fails, keep the devices closer, verify power/battery, and retry from the master UI.
+Note: On the Alarm variant, motor/open/fingerprint capabilities are ignored even if enabled in the UI.
 
 ---
 
@@ -42,6 +43,8 @@ If pairing fails, keep the devices closer, verify power/battery, and retry from 
 
 - **Long press**: triggers **factory reset** (clears pairing and settings) and restarts.
 - **Triple tap**: reserved for the existing "mode" shortcut on your build (unchanged).
+
+When the system is armed, open-button presses are still reported to the master but never unlock locally.
 
 ---
 
@@ -89,6 +92,8 @@ The RGB LED shows two kinds of indications:
 | Low battery | slow blink | orange <img alt="#FF9500" src="https://placehold.co/16x16/FF9500/FF9500.png" /> `#FF9500` |
 | Critical battery | heartbeat | red <img alt="#FF0000" src="https://placehold.co/16x16/FF0000/FF0000.png" /> `#FF0000` |
 
+Breach means the system is armed and the reed reports the door open. In Lock role it also requires `LOCK_STATE=true` (expected locked); in Alarm role lock state is ignored. Breach persists across reboot and is cleared only by the master via `CMD_CLEAR_ALARM`.
+
 ### Fingerprint enrollment overlays (Lock variant only)
 
 | Enrollment step | Pattern | Color |
@@ -111,6 +116,7 @@ Tip: If you used triple-tap to disable RGB feedback, the device will keep workin
 If your slave has a fingerprint sensor and it's enabled in the master configuration:
 - The master controls the main flows: enable/disable verify loop, enroll, delete, query DB, adopt/release.
 - During enrollment, the slave streams stage-by-stage progress so the UI can guide the user.
+While armed, fingerprint matches are still reported but never unlock locally.
 
 ---
 
@@ -118,6 +124,7 @@ If your slave has a fingerprint sensor and it's enabled in the master configurat
 
 - The device sleeps automatically after inactivity (default: a few minutes).
 - Low/Critical battery disables the motor and may force sleep after a grace window.
+See `readme/behavior.md` for the exact grace timing and sleep-pending rules.
 
 ---
 

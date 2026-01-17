@@ -1,6 +1,7 @@
 #include <Device.hpp>
 #include <ConfigNvs.hpp>
 #include <ESPNOWManager.hpp>
+#include <FingerprintScanner.hpp>
 #include <NVSManager.hpp>
 #include <RGBLed.hpp>
 #include <ShockSensor.hpp>
@@ -25,6 +26,10 @@ void Device::refreshCapabilities_() {
   }
 
   updateShockSensor_();
+  if (Fing) {
+    Fing->setSupported(hasFingerprint_ && !isAlarmRole_);
+    Fing->setEnabled(effectiveBand_ == 0);
+  }
 }
 
 void Device::updateShockSensor_() {
@@ -61,6 +66,5 @@ void Device::updateConfigMode_() {
   // Reset transient flows when entering config mode
   if (configModeActive_) {
     awaitingDoorCycle_ = false;
-    if (Now) Now->breach = false;
   }
 }

@@ -39,7 +39,7 @@ EspNowManager::EspNowManager(RTCManager* RTC,
                              Fingerprint* fng)
     : RTC(RTC), Power(Power), motor(motor), Slp(Slp), sw(nullptr),fng(fng) {
   instance = this;
-  breach = false;
+  breach = (CONF ? CONF->GetBool(BREACH_STATE, BREACH_STATE_DEFAULT) : false);
 
   //DBG_PRINTLN("[ESPNOW][Ctor] Constructing EspNowManager…");
 

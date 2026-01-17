@@ -112,7 +112,8 @@ void EspNowManager::sendState(const char* reason) {
   payload.role = IS_SLAVE_ALARM ? 1 : 0;
 
   const bool lock = CONF ? CONF->GetBool(LOCK_STATE, true) : true;
-  const bool door = sw ? sw->isDoorOpen() : false;
+  const bool hasReed = CONF ? CONF->GetBool(HAS_REED_SWITCH_KEY, HAS_REED_SWITCH_DEFAULT) : false;
+  const bool door = hasReed && sw ? sw->isDoorOpen() : false;
   const bool motorMoving =
       motor && (motor->getLockTaskHandle() != nullptr || motor->getUnlockTaskHandle() != nullptr);
 

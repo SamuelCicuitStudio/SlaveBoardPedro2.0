@@ -129,7 +129,6 @@ private:
   void cmd_LockIfSafeAndAck_(const char* src);
   void cmd_RequestUnlockIfAllowed_(const char* src);
   void raiseBreachIfNeeded_();
-  void clearBreachIfClosed_();
   void processResetIfNeeded_();
   void performSafeReset_();
   bool canSleepNow_() const;

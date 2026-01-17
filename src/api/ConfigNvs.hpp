@@ -42,6 +42,7 @@
 #define LOCK_STATE              "LCKST"   // bool   : true=locked, false=unlocked
 #define DIR_STATE               "DIRST"   // bool   : motor direction sense
 #define ARMED_STATE             "ARMED"   // bool   : system armed/disarmed
+#define BREACH_STATE            "BRCH"   // bool   : breach latched until master clears
 #define FINGERPRINT_ENABLED     "FPENA"   // bool   : enable / disable FP auth
 #define MOTION_TRIG_ALARM       "MOTAL"   // bool   : motion/shock trigger enabled
 #define CURRENT_TIME_SAVED      "CAVTT"   // uint32 : last synced unix time
@@ -50,6 +51,7 @@
 #define LOCK_STATE_DEFAULT          true
 #define DIR_STATE_DEFAULT           true
 #define ARMED_STATE_DEFAULT         false
+#define BREACH_STATE_DEFAULT        false
 #define FINGERPRINT_ENABLED_DEFAULT false
 #define MOTION_TRIG_ALARM_DEFAULT   false
 #define DEFAULT_CURRENT_TIME_SAVED  1736121600
@@ -143,6 +145,7 @@
   NVS_KEYLEN_OK(LOCK_STATE);
   NVS_KEYLEN_OK(DIR_STATE);
   NVS_KEYLEN_OK(ARMED_STATE);
+  NVS_KEYLEN_OK(BREACH_STATE);
   NVS_KEYLEN_OK(FINGERPRINT_ENABLED);
   NVS_KEYLEN_OK(MOTION_TRIG_ALARM);
   NVS_KEYLEN_OK(CURRENT_TIME_SAVED);

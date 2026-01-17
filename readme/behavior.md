@@ -6,12 +6,14 @@ This document teaches an LLM how to **reason about and describe** the device's r
 
 ## Key behavior summary (authoritative)
 
-- **Breach**: only when `ARMED_STATE=true`, `LOCK_STATE=true` (expected locked), and the reed indicates the door is open.
+- **Breach**: Lock role -> `ARMED_STATE=true` + `LOCK_STATE=true` + door open; Alarm role -> `ARMED_STATE=true` + door open (lock state ignored).
 - **Open button while armed**: the press is still reported to the master, but the slave never unlocks locally.
 - **Disarm vs clear**: `CMD_DISARM_SYSTEM` prevents new alarm escalation; an active alarm/breach is cleared only by `CMD_CLEAR_ALARM`.
+- **Breach persistence**: breach state is latched in NVS and survives reboot until the master clears it.
 - **Driver near/far**: the master uses `CMD_DISABLE_MOTION` (driver near) and `CMD_ENABLE_MOTION` (driver far); driver near must not be treated as a full disarm.
 - **Config Mode / Test Mode**: security off (no breach or `AlarmRequest`), but diagnostic events still flow; fingerprint verify remains active (match/fail streamed).
 - **Fingerprint enrollment**: stage-by-stage feedback and waits for the user (place -> lift -> place again); verify and enroll must not overlap.
+- **Battery Low/Critical**: suppress `AlarmRequest` and new breach; Lock role emits `LockCanceled`/`AlarmOnlyMode` and disables fingerprint verify; motor commands are still accepted so the master must block them.
 
 ## 0) Canonical Concepts & Precedence (authoritative)
 
@@ -30,7 +32,7 @@ This document teaches an LLM how to **reason about and describe** the device's r
 
 ### Absolute precedence (apply from top to bottom; higher rules override lower)
 
-1. **Battery safety** (Critical/Low policies and motor disable)
+1. **Battery safety** (Critical/Low overlays + sleep scheduling; alarm requests/breach suppressed; master blocks motor in Low/Critical)
 2. **Config Mode** (security gating off; role capability gating still applies)
 3. **Role capability gating** (Alarm role: no motor/open/fingerprint)
 4. **Arming** (security features active only when Armed; forced off in Config Mode)
@@ -61,14 +63,17 @@ This document teaches an LLM how to **reason about and describe** the device's r
 ### Lock role (`IS_SLAVE_ALARM=false`)
 
 - Considers: **motor**, **open button** (if present), **fingerprint** (if present), **reed**, **shock**.
-- Can drive the motor **unless disabled by battery policy**.
+- Motor runs only on master commands; the slave does **not** block motor commands on Low/Critical (master must enforce).
 - Security (shock/breach) runs only when **Armed** (and not in Config Mode).
 
 ### Alarm role (`IS_SLAVE_ALARM=true`)
 
 - Considers only: **reed** + **shock**.
 - **Motor/open/fingerprint are disabled** (commands return UNSUPPORTED; signals ignored).
-- **Breach definition (both roles):** when **Armed** and `LOCK_STATE=true` (expected locked), any **reed transition to open** -> breach.
+- **Breach definition**:
+  - **Lock role**: Armed + `LOCK_STATE=true` + reed->open -> breach.
+  - **Alarm role**: Armed + reed->open -> breach (lock state ignored).
+  - **Operational note**: in Alarm role the master must disarm before opening; any door open while Armed is a breach.
 
 ---
 
@@ -78,10 +83,11 @@ This document teaches an LLM how to **reason about and describe** the device's r
 
 - **Pairing transport only** (`PairInit`/`ACK_PAIR_INIT`, config status). No normal events/commands.
   Pair init must carry **caps (u8) + seed (u32, big-endian)** so the slave can
-  derive the LMK and apply hardware caps after `ACK_PAIR_INIT` is confirmed OK.
+  derive the LMK, switch the peer to encrypted mode, and apply hardware caps after
+  `ACK_PAIR_INIT` is confirmed OK.
 - Advertising LED may blink; device sleeps per battery policy.
 - **Lock role only**: if battery is **Good**, the **open button may actuate the motor** (local control).
-  If battery is **Low** or **Critical**, motor is disabled (see section 5).
+  If battery is **Low** or **Critical**, local motor is disabled (see section 5).
 
 ### Paired (`DEVICE_CONFIGURED=true`)
 
@@ -123,39 +129,69 @@ This document teaches an LLM how to **reason about and describe** the device's r
 - **Motion trigger enable/disable** (`CMD_ENABLE_MOTION` / `CMD_DISABLE_MOTION`) is
   **not** the same as arming/disarming.
 - **Security logic runs only when Armed** (shock/breach), **except** in Config Mode where security is forced off.
-- **Breach rule (both roles)**: _reed->open while Armed_ -> breach **only if** `LOCK_STATE=true` (expected locked).
+- **Breach rules**:
+  - **Lock role**: _reed->open while Armed_ -> breach **only if** `LOCK_STATE=true` (expected locked).
+  - **Alarm role**: _reed->open while Armed_ -> breach (lock state ignored).
 
 ---
 
 ## 5) Battery Policy (authoritative)
 
+### Master-facing quick reference (Paired, Config Mode off)
+
+**Lock role**
+
+- **Good**: normal behavior (motor by command, breach/AlarmRequest when armed, fingerprint verify active).
+- **Low**: emits `LockCanceled` + `AlarmOnlyMode` + `Power LowBatt`; suppresses `AlarmRequest` and new breach; fingerprint verify disabled; motor commands still accepted, so the master must block them; sleeps after grace when safe.
+- **Critical**: same as Low, plus `CriticalPower` + `Power CriticalBatt`; sleeps after grace when safe.
+
+**Alarm role**
+
+- **Good**: reed/shock normal; breach/AlarmRequest when armed.
+- **Low**: suppresses `AlarmRequest` and new breach; reed/shock events still report if enabled; emits `Power LowBatt` (and may emit `LockCanceled`/`AlarmOnlyMode`, which the master should ignore for Alarm role); sleeps after grace when safe.
+- **Critical**: same as Low, plus `CriticalPower` + `Power CriticalBatt`; sleeps after grace when safe.
+
+> Existing breach state persists across all battery bands until the master sends `CMD_CLEAR_ALARM`.
+
 ### Bands & effects (both roles, Paired & Unpaired)
 
 - **Low battery**
 
-  - **Motor is disabled** (Lock role enters **AlarmOnlyMode** overlay).
-  - **Paired**: emit required overlays/events to master, then **sleep**.
-  - **Unpaired**: pairing traffic only; sleep after any local disable actions (e.g., fingerprint off).
+  - **Paired**:
+    - Emit `LockCanceled` + `AlarmOnlyMode` (Lock-role overlays; still emitted in Alarm role but should be ignored there), plus `Power LowBatt` on band entry.
+    - Suppress `AlarmRequest` and breach; shock triggers still report if motion is enabled.
+    - Fingerprint verify is disabled (Lock role).
+    - Motor commands are still accepted by the slave; the **master must avoid sending motor commands** in Low.
+    - Sleep after grace once safe (motor not moving).
+  - **Unpaired**:
+    - Pairing traffic only; open button never drives motor.
+    - Fingerprint verify is disabled.
+    - Sleep after grace once safe.
 
 - **Critical battery**
 
-  - **Motor is disabled**; device minimizes activity.
-  - **Paired**: emit `CriticalPower` + overlays, then **sleep immediately**.
-  - **Unpaired**: **deep sleep immediately**.
+  - **Paired**:
+    - Emit `LockCanceled` + `AlarmOnlyMode` (Lock-role overlays; still emitted in Alarm role but should be ignored there), `CriticalPower`, and `Power CriticalBatt` on band entry.
+    - Suppress `AlarmRequest` and breach; shock triggers still report if motion is enabled.
+    - Fingerprint verify is disabled (Lock role).
+    - Motor commands are still accepted by the slave; the **master must avoid sending motor commands** in Critical.
+    - Sleep after grace once safe (motor not moving).
+  - **Unpaired**:
+    - Deep sleep after grace once safe (pairing traffic only while awake).
 
 ### Push-button behavior at Low/Critical (Lock role only)
 
-- **Critical** (Paired or Unpaired): **never** drives motor.
+- **Critical** (Paired or Unpaired): **never** drives motor locally.
 
-  - If **Paired**: may transmit `UnlockRequest/OpenRequest` briefly, then immediate sleep.
+  - If **Paired**: sends `OpenRequest`/`UnlockRequest`, then sleeps after a short TX window.
   - If **Unpaired**: brief wake/LED only, then sleep (pairing traffic only).
 
 - **Low**:
 
-  - **Unpaired**: motor **disabled**; no actuation.
-  - **Paired**: may send request/overlays; motor stays **disabled**; device sleeps after sending overlays.
+  - **Unpaired**: no motor actuation; pairing traffic only.
+  - **Paired**: sends `OpenRequest`/`UnlockRequest`; no local motor; device sleeps after grace when safe.
 
-> **AlarmOnlyMode overlay** (Lock role, Low/Critical) is **not** the same thing as the **Alarm role**. They are unrelated concepts.
+> **AlarmOnlyMode overlay** (emitted on Low/Critical; meaningful for Lock role) is **not** the same thing as the **Alarm role**. It tells the master to block motor commands; in Alarm role it is informational and can be ignored.
 
 ---
 
@@ -176,7 +212,7 @@ This document teaches an LLM how to **reason about and describe** the device's r
   `role`, `armed`, `door`, `breach`, `batt_level`, `power_band`, `configMode`, `shock_enabled`
   (and `locked` when in Lock role).
 - **Power overlays** (Low/Critical):
-  `AlarmOnlyMode` (Lock role only), `LockCanceled` (if a motor action was blocked), `CriticalPower`, and `Power LowBatt/CriticalBatt` as applicable.
+  `AlarmOnlyMode`/`LockCanceled` (Lock-role overlays; may still be emitted in Alarm role but should be ignored there), `CriticalPower`, and `Power LowBatt/CriticalBatt` as applicable.
 
 ### Lock role - specifics
 
@@ -184,15 +220,16 @@ This document teaches an LLM how to **reason about and describe** the device's r
 
   - On accepted lock/unlock, drive motor and emit **`MotorDone(locked=1/0)`** on completion.
   - **Never** emit `MotorDone` just because the door/reed changed; door visibility uses `DoorOpen`/`DoorClosed` + `StateReport`.
-  - When **Low**/**Critical**, motor actions are **canceled**; emit `LockCanceled` and (for Low/Critical) `AlarmOnlyMode` as applicable.
+  - When **Low**/**Critical**, the slave still accepts motor commands; the master must avoid sending them. `LockCanceled`/`AlarmOnlyMode` overlays are emitted on band entry.
 
-- **Breach (Armed)**: when `LOCK_STATE=true` and the reed reports open, raise `AlarmRequest(reason=breach)` and set/clear `breach` in `StateReport`.
+- **Breach (Armed)**: when `LOCK_STATE=true` and the reed reports open, raise `AlarmRequest(reason=breach)` and set `breach` in `StateReport` (cleared only by `CMD_CLEAR_ALARM`).
 
 ### Alarm role - specifics
 
-- **Breach (Armed)**: same rule as Lock role: `LOCK_STATE=true` and reed open -> `AlarmRequest(reason=breach)`; set/clear `breach`.
+- **Breach (Armed)**: reed open while Armed -> `AlarmRequest(reason=breach)`; `breach` stays set until `CMD_CLEAR_ALARM` (lock state ignored).
+- **Operational note**: the master must disarm before opening; opening while Armed always triggers breach.
 - **Motor/open/fingerprint**: commands return **UNSUPPORTED**; no related events are generated.
-- The `locked` field is the persisted expectation (`LOCK_STATE`) and is used to decide whether an open door is a breach.
+- The `locked` field is the persisted expectation (`LOCK_STATE`); it does **not** gate breach in Alarm role.
 
 ---
 
@@ -202,7 +239,7 @@ This document teaches an LLM how to **reason about and describe** the device's r
 - **Alarm control**: `CMD_CLEAR_ALARM` clears alarm/breach state (`ACK_ALARM_CLEARED` / `EVT_ALARM_CLEARED`).
 - **Motion trigger**: `CMD_ENABLE_MOTION` / `CMD_DISABLE_MOTION` (separate from arm/disarm).
 - **Shock config**: `CMD_SET_SHOCK_SENSOR_TYPE`, `CMD_SET_SHOCK_SENS_THRESHOLD`, `CMD_SET_SHOCK_L2D_CFG`.
-- **Motor (Lock role only)**: lock/unlock (`CMD_LOCK_SCREW` / `CMD_UNLOCK_SCREW`), force lock/unlock; subject to **battery policy** (disabled at Low/Critical).
+- **Motor (Lock role only)**: lock/unlock (`CMD_LOCK_SCREW` / `CMD_UNLOCK_SCREW`), force lock/unlock; **master must block** in Low/Critical (slave does not block).
 - **Lock driver mode (Lock role only)**: `CMD_LOCK_EMAG_ON` / `CMD_LOCK_EMAG_OFF`.
 - **Capabilities**: `CMD_CAP_*` toggles (open/shock/reed/fp) and `CMD_CAPS_QUERY` bitmap.
 - **Alarm role**: motor commands are ignored/UNSUPPORTED in all modes (including Config Mode).
@@ -229,10 +266,10 @@ This document teaches an LLM how to **reason about and describe** the device's r
 | Lock  | No     | N/A         | Critical     | **Disabled**                 | Local only                                      | Local only            | **Pairing only**              |
 | Lock  | Yes    | No          | Good         | Allowed by commands          | Armed: Shock+AlarmRequest; Disarmed: Shock-only | **Armed & locked & reed->open** | **Yes**                       |
 | Lock  | Yes    | **Yes**     | Good         | Allowed by commands          | **Shock-only** (diagnostic)                     | **No breach**         | **Yes**                       |
-| Lock  | Yes    | Any         | **Low**      | **Disabled** (AlarmOnlyMode) | Reported; **no AlarmRequest**                   | **No breach**         | **Yes**, then sleep           |
-| Lock  | Yes    | Any         | **Critical** | **Disabled**                 | Reported; **no AlarmRequest**                   | **No breach**         | **Yes**, then immediate sleep |
+| Lock  | Yes    | Any         | **Low**      | Master-gated (no local block) | Reported; **no AlarmRequest**                  | **No breach**         | **Yes**, then sleep           |
+| Lock  | Yes    | Any         | **Critical** | Master-gated (no local block) | Reported; **no AlarmRequest**                  | **No breach**         | **Yes**, then immediate sleep |
 | Alarm | No     | N/A         | Any          | N/A                          | Local only                                      | Local only            | **Pairing only**              |
-| Alarm | Yes    | No          | Good         | N/A                          | Armed: Shock+AlarmRequest; Disarmed: Shock-only | **Armed & locked & reed->open** | **Yes**                       |
+| Alarm | Yes    | No          | Good         | N/A                          | Armed: Shock+AlarmRequest; Disarmed: Shock-only | **Armed & reed->open**          | **Yes**                       |
 | Alarm | Yes    | **Yes**     | Good         | N/A                          | **Shock-only** (diagnostic)                     | **No breach**         | **Yes**                       |
 | Alarm | Yes    | Any         | **Low**      | N/A                          | Reported; **no AlarmRequest**                   | **No breach**         | **Yes**, then sleep           |
 | Alarm | Yes    | Any         | **Critical** | N/A                          | Reported; **no AlarmRequest**                   | **No breach**         | **Yes**, then immediate sleep |
@@ -244,9 +281,9 @@ This document teaches an LLM how to **reason about and describe** the device's r
 | Unpaired | Good     | **Drives motor** (lock/unlock); local LED/log only; pairing traffic continues. |
 | Unpaired | Low      | **No motor** (disabled); pairing traffic continues.                        |
 | Unpaired | Critical | Brief wake/LED only; **no motor**; pairing traffic continues.              |
-| Paired   | Good     | May submit Open/UnlockRequest; motor allowed by command path and battery.  |
-| Paired   | Low      | Request/overlays allowed; **motor disabled**; device sleeps after sending. |
-| Paired   | Critical | Request allowed, then **immediate sleep**; **no motor**.                   |
+| Paired   | Good     | Sends Open/UnlockRequest; **no local motor**; master decides on motor.     |
+| Paired   | Low      | Sends requests; **no local motor**; sleep after grace when safe.           |
+| Paired   | Critical | Sends requests, then short TX window and sleep; **no local motor**.         |
 
 ### C) Safe-to-sleep rules (all roles)
 
@@ -277,7 +314,7 @@ This document teaches an LLM how to **reason about and describe** the device's r
 ## 11) Names to keep distinct (do not conflate)
 
 - **Alarm role** (a **product configuration**: reed + shock only).
-- **AlarmOnlyMode** (a **Lock-role battery overlay** when motor is disabled due to Low/Critical power).
+- **AlarmOnlyMode** (a **battery overlay** indicating Low/Critical; meaningful for Lock role where the master should block motor commands).
   These are unrelated; an answer must never treat them as the same thing.
 
 ---
@@ -288,7 +325,7 @@ When asked "what happens if...", **always**:
 
 1. **Normalize inputs** explicitly:
    `Role=..., Paired=..., ConfigMode=..., Battery=..., Armed=..., Locked=...`
-2. **Apply precedence** in order (section 0) and call out any overrides (e.g., "Battery=Critical -> motor disabled regardless of role/armed.").
+2. **Apply precedence** in order (section 0) and call out any overrides (e.g., "Battery=Critical -> alarm requests/breach suppressed and master blocks motor; sleep scheduled.").
 3. **State outputs** in this order, omitting irrelevant ones:
 
    - **Transport**: `sends/does not send` + which events (e.g., `DoorOpen`, `Shock Trigger`, `AlarmRequest(reason=breach|shock)`, overlays).
@@ -302,7 +339,7 @@ When asked "what happens if...", **always**:
 
 **Example 1 - Alarm role, Paired, Armed, Good battery, reed opens**
 
-- Inputs: Role=Alarm, Paired=Yes, ConfigMode=No, Battery=Good, Armed=Yes, Locked=Yes
+- Inputs: Role=Alarm, Paired=Yes, ConfigMode=No, Battery=Good, Armed=Yes, Locked=any (ignored)
 - Precedence: none override.
 - Result: Transport sends `DoorOpen`, raises `AlarmRequest(reason=breach)`, sets `breach=1` in `StateReport`. Motor N/A.
 
@@ -315,8 +352,8 @@ When asked "what happens if...", **always**:
 **Example 3 - Lock role, Paired, Low battery, unlock command**
 
 - Inputs: Role=Lock, Paired=Yes, ConfigMode=No, Battery=Low, Armed=any
-- Precedence: Battery Low => motor disabled.
-- Result: Motor action **canceled**; send overlays (`AlarmOnlyMode`, `LockCanceled`, `Power LowBatt`), then **sleep**. No `AlarmRequest`.
+- Precedence: Battery Low => alarm requests/breach suppressed; master should not send motor commands.
+- Result: Slave emits overlays (`AlarmOnlyMode`, `LockCanceled`, `Power LowBatt`), then sleeps after grace when safe. If the master still sends a motor command, the slave will execute it.
 
 **Example 4 - Any role, Paired, Config Mode, shock triggers**
 
@@ -335,10 +372,10 @@ When asked "what happens if...", **always**:
   **A: No.** Config Mode disables **security**, not **role gating**. Alarm role never has motor/open/fingerprint.
 
 - **Q: What is the breach rule in Alarm role?**
-  **A: Armed & locked & reed->open = breach.** Locked means `LOCK_STATE=true` (expected locked).
+  **A: Armed & reed->open = breach.** Lock state is ignored because Alarm role has no motor.
 
 - **Q: What is AlarmOnlyMode?**
-  **A:** A **Lock-role** battery overlay (Low/Critical) meaning motor is disabled. Not related to Alarm role.
+  **A:** A **battery overlay** emitted on Low/Critical; it tells the master to block motor commands for Lock role. In Alarm role it is informational and can be ignored.
 
 ---
 
@@ -379,21 +416,23 @@ These are here to make firmware changes straightforward and unambiguous.
   motion trigger enable/disable (`CMD_ENABLE_MOTION` / `CMD_DISABLE_MOTION`).
 - **Motion enabled**: NVS key `MOTION_TRIG_ALARM` toggled by
   `CMD_ENABLE_MOTION` / `CMD_DISABLE_MOTION`. It gates all shock-trigger events.
-- **Locked state**: NVS key `LOCK_STATE` read via `Device::isLocked_()`. This does **not** gate breach; breach uses the shared reed-open rule.
+- **Locked state**: NVS key `LOCK_STATE` read via `Device::isLocked_()`. It gates breach only in **Lock role**; Alarm role ignores lock state for breach.
+- **Breach state**: NVS key `BREACH_STATE` stores the latched breach flag and is loaded on boot; it is cleared only by `CMD_CLEAR_ALARM`.
 - **Config Mode**: `EspNowManager::configMode_` toggled by `EspNowManager::setConfigMode()`, mirrored into `Device::configModeActive_` by `Device::updateConfigMode_()`. All security paths must use `configModeActive_` to gate behavior.
 - **Door open/closed**: `SwitchManager::isDoorOpen()` (backed by a fast IRQ on `REED_SWITCH_PIN` plus polling) read via `Device::isDoorOpen_()`. When `hasReed_==false`, the effective door is treated as **always closed** for breach/shock logic.
 - **Open button (Lock role only)**: `SwitchManager::isOpenButtonPressed()` (backed by a fast IRQ on `OPEN_SWITCH_PIN` plus polling) read from `Device::pollInputsAndEdges_()`. A **single rising edge per physical press** is used to drive behavior. When Paired and allowed by battery policy, this rising edge generates `OpenRequest` (Switch/Reed op=0x02) and `UnlockRequest` (Device op=0x0E); in Unpaired/Good-battery bench mode it drives a **local unlock task only** (pairing traffic still active; no normal events).
 - **User/Boot button taps**: `SwitchManager::handleBootTapHold_()` detects taps on `USER_BUTTON_PIN`. A **single tap** prints the MAC to serial; a **triple tap** toggles RGB LED feedback off/on.
 - **Shock sensor**: `ShockSensor::isTriggered()` uses `SHOCK_SENSOR1_PIN` for interrupts and selects **external GPIO** or **internal LIS2DHTR** via `SHOCK_SENSOR_TYPE_KEY`. LIS2DHTR config is stored in `SHOCK_L2D_*` keys and applied at boot and when updated. In **Unpaired** bench mode it still detects shocks and logs/overlays locally but emits **no normal transport events** (pairing traffic only). In **Paired** mode, every trigger emits a Shock Trigger event, and raising `AlarmRequest(reason=shock)` is additionally gated by `effectiveArmed==true` (Config Mode still sends Shock Trigger only). The LIS2DHTR and MAX17055 share the I2C bus; `I2CBusManager` mediates bus init/reset so one device doesn't reset the other. When switching to internal, the slave probes the LIS2DHTR; if it is missing, it falls back to external and returns `ACK_SHOCK_INT_MISSING (0xD9)`. On success, it sets `HAS_SHOCK_SENSOR_KEY=true` automatically.
-- **Breach flag**: `EspNowManager::breach` (`Now->breach`) is the single source of truth: `0` = no breach, `1` = active breach. `Breach(set/clear)` events and the `breach` field in the state struct must mirror this flag.
+- **Breach flag**: `EspNowManager::breach` (`Now->breach`) is the single source of truth: `0` = no breach, `1` = active breach. The `breach` field in the state struct must mirror this flag, and it is cleared only by `CMD_CLEAR_ALARM`.
 - **Battery bands**: `PowerManager::getPowerMode()` vs `CRITICAL_POWER_MODE` and `%` from `PowerManager::getBatteryPercentage()`. `Low` is defined as `< LOW_BATTERY_PCT` while not critical; `Critical` is `powerMode == CRITICAL_POWER_MODE`.
 - **Battery policy enforcement**: `Device::enforcePowerPolicy_()` is the only place that:
-  - Sends `LockCanceled`, `AlarmOnlyMode`, `CriticalPower`, `Power LowBatt/CriticalBatt` overlays/events.
-  - Decides between `SleepTimer::goToSleep()` (Paired) and deep sleep (`Device::enterCriticalSleepUnpaired_()`) in critical/unpaired paths.
+  - Sends `LockCanceled`, `AlarmOnlyMode`, `CriticalPower`, `Power LowBatt/CriticalBatt` overlays/events (not tied to a specific motor command).
+  - Schedules sleep (`SleepTimer::goToSleep()` when Paired, deep sleep when unpaired/critical).
+  - Does **not** block motor commands; the master is responsible for motor gating in Low/Critical.
 - Maintains a `sleepPending_` flag and exposes it in the Device state struct and via `EVT_SLEEP_PENDING` / `EVT_SLEEP_PENDING_CLEAR` so the master knows when Low/Critical sleep is scheduled but deferred (e.g., while a motor motion finishes) and when that pending state has been cancelled.
 - **Event wiring**:
   - `DoorEdge` + `StateReport` are emitted from `Device::handleStateTransitions_()` on every door edge when Paired.
   - Shock `Trigger` + `AlarmRequest(reason=shock)` are emitted from `Device::pollInputsAndEdges_()` when shock conditions are met.
-  - Breach `AlarmRequest(reason=breach)` + `Breach(set/clear)` come from `Device::raiseBreachIfNeeded_()` / `Device::clearBreachIfClosed_()`.
+  - Breach `AlarmRequest(reason=breach)` + `Breach(set)` come from `Device::raiseBreachIfNeeded_()`. `CMD_CLEAR_ALARM` clears breach state.
   - `DriverFar` events (and `ACK_DRIVER_FAR`) are generated only when Lock role, Paired, `effectiveArmed=true`, door open, and `locked=false`, with a minimum interval of `DRIVER_FAR_ACK_MS`.
 - **Sleep & wake**: `SleepTimer` is serviced from `Device::loop()`; all paths that send Low/Critical overlays or critical open-button requests must either call `SleepTimer::goToSleep()` or `Device::enterCriticalSleepUnpaired_()` as described in section 5 and section 8.

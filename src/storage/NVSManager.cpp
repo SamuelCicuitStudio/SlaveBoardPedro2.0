@@ -198,6 +198,7 @@ void NVS::initializeVariables() {
     PutBool (LOCK_STATE,        LOCK_STATE_DEFAULT);        // locked/unlocked
     PutBool (DIR_STATE,         DIR_STATE_DEFAULT);         // motor direction
     PutBool (ARMED_STATE,       ARMED_STATE_DEFAULT);       // armed/disarmed
+    PutBool (BREACH_STATE,      BREACH_STATE_DEFAULT);      // breach latch
     PutBool (MOTION_TRIG_ALARM, MOTION_TRIG_ALARM_DEFAULT); // motion/shock trigger enabled
     PutBool (FINGERPRINT_ENABLED, FINGERPRINT_ENABLED_DEFAULT); // FP auth allowed
     PutULong64(CURRENT_TIME_SAVED, DEFAULT_CURRENT_TIME_SAVED);

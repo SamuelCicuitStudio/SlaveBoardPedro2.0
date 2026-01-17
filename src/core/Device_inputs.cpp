@@ -18,6 +18,7 @@ void Device::pollInputsAndEdges_(bool securityEnabled) {
   const bool configured  = isConfigured_();
   const bool armed       = securityEnabled ? isArmed_() : false;  // effective armed (forced false in Config Mode)
   const bool locked      = isLocked_();
+  const bool batteryOk   = (effectiveBand_ == 0);
 
   // If no reed, treat as always closed for edge logic (no false triggers)
   const bool doorOpenHw  = isDoorOpen_();
@@ -40,9 +41,8 @@ void Device::pollInputsAndEdges_(bool securityEnabled) {
       if (sleepTimer) sleepTimer->reset();
     } else {
       if (RGB) RGB->postOverlay(OverlayEvent::SHOCK_DETECTED);
-      sendMotionTrig_();               // Now->SendMotionTrigg()
       sendTransportEvent_(transport::Module::Shock, /*op*/0x03, {uint8_t(transport::StatusCode::OK)});
-      if (armed) {
+      if (armed && batteryOk) {
         // Only when effectively armed (Config Mode forces armed=false).
         sendTransportEvent_(transport::Module::Device, /*op*/0x0F, {1}); // AlarmRequest reason=shock
       }
@@ -55,7 +55,6 @@ void Device::pollInputsAndEdges_(bool securityEnabled) {
   if (!isAlarmRole_ && configured && armed && doorOpen && !locked) {
     const uint32_t now = ms_();
     if ((now - lastDriverFarMs) >= DRIVER_FAR_ACK_MS) {
-      sendAck_(ACK_DRIVER_FAR, true);
       lastDriverFarMs = now;
       sendTransportEvent_(transport::Module::Device, /*op*/0x10, {});
     }
@@ -72,7 +71,6 @@ void Device::pollInputsAndEdges_(bool securityEnabled) {
           lastOpenBtnEdgeMs = ms_();
 
           // Still report the press and unlock attempt so the master can log/deny.
-          requestUnlock_();
           sendTransportEvent_(transport::Module::SwitchReed, /*op*/0x02, {});
           sendTransportEvent_(transport::Module::Device,     /*op*/0x0E, {});
 
@@ -95,16 +93,21 @@ void Device::pollInputsAndEdges_(bool securityEnabled) {
             motorDriver->startUnlockTask();
             if (sleepTimer) sleepTimer->reset();
           } else {
-            // Paired path: request unlock from master, never local motor.
-            cmd_RequestUnlockIfAllowed_("OpenButton");
-            // Transport: OpenRequest event
-            sendTransportEvent_(transport::Module::SwitchReed, /*op*/0x02, {});
-            sendTransportEvent_(transport::Module::Device, /*op*/0x0E, {});
+            if (configured) {
+              // Paired path: request unlock from master, never local motor.
+              cmd_RequestUnlockIfAllowed_("OpenButton");
+              // Transport: OpenRequest event
+              sendTransportEvent_(transport::Module::SwitchReed, /*op*/0x02, {});
+              sendTransportEvent_(transport::Module::Device, /*op*/0x0E, {});
 
-            if (criticalNow && configured) {
-              vTaskDelay(pdMS_TO_TICKS(200));   // allow TX window
-              if (sleepTimer) sleepTimer->goToSleep(); // does not return
+              if (criticalNow) {
+                vTaskDelay(pdMS_TO_TICKS(200));   // allow TX window
+                if (sleepTimer) sleepTimer->goToSleep(); // does not return
+              } else {
+                if (sleepTimer) sleepTimer->reset();
+              }
             } else {
+              DBG_PRINTLN("[OpenButton] Unpaired -> no transport request");
               if (sleepTimer) sleepTimer->reset();
             }
           }
@@ -120,7 +123,6 @@ void Device::pollInputsAndEdges_(bool securityEnabled) {
   if (configured && armed) {
     raiseBreachIfNeeded_();
   }
-  clearBreachIfClosed_();
 }
 
 // =========================
@@ -162,15 +164,12 @@ void Device::handleStateTransitions_(bool configured, bool armed,
       sendTransportEvent_(transport::Module::Device, /*op*/0x09, buildStatePayload_());
 
       if (doorOpen) {
-        // Generic state update
-        sendAck_(ACK_UNLOCKED, true);
         // Extra signal in the DISARMED post-unlock flow
         if (awaitingDoorCycle_ && !armed && !locked) {
           sendAck_(EVT_UNL_OPN, true);
           DBG_PRINTLN("[Flow] UNOPN sent (after master unlock, disarmed)");
         }
       } else {
-        sendAck_(ACK_LOCKED, true);
         // Complete the DISARMED post-unlock flow
         if (awaitingDoorCycle_ && !armed) {
           sendAck_(EVT_UNL_CLS, true);
@@ -227,8 +226,7 @@ void Device::cmd_RequestUnlockIfAllowed_(const char* src) {
     DBG_PRINTLN(String("[Action-LOCAL] ") + src + " ignored (unpaired; no master)");
     return;
   }
-  DBG_PRINTLN(String("[Action] ") + src + " -> RequestUnlock() (auth request to master)");
-  requestUnlock_();
+  DBG_PRINTLN(String("[Action] ") + src + " -> unlock request (auth request to master)");
 }
 
 // =========================
@@ -238,33 +236,29 @@ void Device::raiseBreachIfNeeded_() {
   if (configModeActive_) return;
   if (!isConfigured_() || !Now) return;
   if (!isArmed_())   return;
+  if (effectiveBand_ != 0) return;
 
   // Effective door state (respect hasReed_ gating used elsewhere)
   const bool doorOpenHw = isDoorOpen_();
   const bool doorOpen   = hasReed_ ? doorOpenHw : false;
 
-  // Breach rule (both roles): Armed & LOCK_STATE=locked & reed->open.
+  // Breach rule: Lock role requires LOCK_STATE=locked; Alarm role ignores lock state.
   const bool locked = isLocked_();
-  const bool breachCondition = locked && doorOpen;
+  const bool breachCondition = isAlarmRole_ ? doorOpen : (locked && doorOpen);
 
   if (breachCondition && !Now->breach) {
-    DBG_PRINTLN("[Breach] Door opened while supposed to be locked -> report to master");
+    if (isAlarmRole_) {
+      DBG_PRINTLN("[Breach] Alarm role: door open while armed -> report to master");
+    } else {
+      DBG_PRINTLN("[Breach] Door opened while supposed to be locked -> report to master");
+    }
     if (RGB) RGB->postOverlay(OverlayEvent::BREACH);
-    requestAlarm_();            // Now->RequesAlarm()
     sendTransportEvent_(transport::Module::Device, /*op*/0x0F, {0}); // reason=breach
     sendTransportEvent_(transport::Module::Device, /*op*/0x13, {1}); // breach set
     Now->breach = true;
+    if (CONF) {
+      CONF->PutBool(BREACH_STATE, true);
+    }
     if (sleepTimer) sleepTimer->reset();
-  }
-}
-void Device::clearBreachIfClosed_() {
-  if (!Now || !Now->breach) return;
-  // Use the same effective door state as elsewhere (hasReed_ gating)
-  const bool doorOpenHw = isDoorOpen_();
-  const bool doorOpen   = hasReed_ ? doorOpenHw : false;
-  if (!doorOpen) {
-    Now->breach = false;
-    sendTransportEvent_(transport::Module::Device, /*op*/0x13, {0}); // breach clear
-    DBG_PRINTLN("[Breach] cleared on door close");
   }
 }

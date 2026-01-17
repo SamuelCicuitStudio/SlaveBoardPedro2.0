@@ -70,6 +70,10 @@ public:
     void attachTransportPort(transport::TransportPort* port) { transport_ = port; }
 
     // --- status / info ---
+    void setEnabled(bool enabled);
+    void setSupported(bool supported);
+    bool isEnabled() const       { return enabled_ && supported_; }
+    bool isSupported() const     { return supported_; }
     bool isTampered() const      { return tamperDetected_; }
     bool isSensorPresent() const { return sensorPresent_; }
 
@@ -139,7 +143,7 @@ private:
 
     // Helper: ready for background verify?
     inline bool isReadyForVerify_() const {
-        return (sensorPresent_ && !tamperDetected_);
+        return (isEnabled() && sensorPresent_ && !tamperDetected_);
     }
 
     // Dependencies
@@ -168,6 +172,8 @@ private:
     // security state
     bool                  tamperDetected_;
     bool                  sensorPresent_;
+    bool                  enabled_;
+    bool                  supported_;
 
     // rate limiting for tamper reports
     uint32_t              lastTamperReportMs_;

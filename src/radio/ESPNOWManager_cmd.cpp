@@ -283,7 +283,11 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
   if (opcode == CMD_CLEAR_ALARM) {
    // DBG_PRINTLN("[ESPNOW][CMD] CMD_CLEAR_ALARM -> clear alarm/buzzer");
     breach = false;
+    if (CONF) {
+      CONF->PutBool(BREACH_STATE, false);
+    }
     SendAck(ACK_ALARM_CLEARED, true);
+    SendAck(EVT_ALARM_CLEARED, true);
     return;
   }
 

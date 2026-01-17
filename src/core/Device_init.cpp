@@ -74,6 +74,9 @@ void Device::initManagers_() {
               R503_TX_PIN,
               57600
            );
+    if (Fing) {
+      Fing->setSupported(hasFingerprint_ && !isAlarmRole_);
+    }
   }
 
   // 2) Construct ESP-NOW bridge and hand it the FP instance

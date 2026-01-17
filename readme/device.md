@@ -4,7 +4,8 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 
 ## Key behavior summary
 
-- **Breach**: detected by the slave when armed + locked (`LOCK_STATE=true`) + door open (reed), then reported to the master.
+- **Breach**: Lock role = armed + `LOCK_STATE=true` + door open; Alarm role = armed + door open (lock state ignored), then reported to the master.
+- **Breach persistence**: breach is latched in NVS and survives reboot until the master sends `CMD_CLEAR_ALARM`.
 - **Open button while armed**: the press is still reported (request), but the slave never unlocks locally.
 - **Test Mode** (`CMD_ENTER_TEST_MODE`): security off (no breach or alarm escalation) but diagnostic events still flow; fingerprint verify still runs and streams match/fail.
 - **Fingerprint**: verify and enroll are mutually exclusive; enrollment streams stages; adopt/release are explicit master commands with ACK replies.
@@ -42,7 +43,7 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 
 - Door/Reed (hasReed_): DoorEdge + StateReport on edges. In lock role, the slave emits transport `MotorDone` (Motor op=0x05) when the motor finishes; the ESP-NOW bridge also maps motor completion to CommandAPI `ACK_LOCKED`/`ACK_UNLOCKED` for master compatibility.
 - Shock (hasShock_, motion enabled; Config Mode always reports): Shock Trigger; AlarmRequest(reason=shock) only when armed.
-- Breach (paired, armed, LOCK_STATE=locked, door open): AlarmRequest(reason=breach) + Breach set/clear; cleared on door close.
+- Breach (paired, armed): Lock role uses `LOCK_STATE=true` + door open; Alarm role uses door open while armed. Emits AlarmRequest(reason=breach) + Breach set; cleared only by `CMD_CLEAR_ALARM`.
 - DriverFar: lock role only, paired+armed+doorOpen+!locked, rate-limited.
 - Open button (lock role, hasOpenSwitch_): OpenRequest + UnlockRequest; no local motor when paired. While armed, the press is still reported so the master can log/deny. In critical power, short TX window then sleep.
 - Fingerprint (lock role with FP): match/fail/tamper/busy/no-sensor events, enroll progress, adopt/release, DB info/next ID. If tampered, fingerprint is disabled and reported to the master unless the master explicitly sends adopt/release.
@@ -59,7 +60,7 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 
 ## Divergences between roles
 
-- Alarm role: no motor/open/FP; no MotorDone or OpenRequest events; DriverFar suppressed. Shock/reed/breach and power overlays still reported.
+- Alarm role: no motor/open/FP; no MotorDone or OpenRequest events; DriverFar suppressed. Shock/reed/breach and power overlays still reported. Master must disarm before opening; opening while armed always breaches.
 - Lock role: all peripherals allowed per HAS_*; motor and FP active if present; DriverFar and open button flows active.
 
 ## Reset/logs/LEDs

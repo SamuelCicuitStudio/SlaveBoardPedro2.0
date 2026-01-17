@@ -21,7 +21,7 @@ bool Device::isMotionEnabled_() const {
   return CONF && CONF->GetBool(MOTION_TRIG_ALARM, false);
 }
 bool Device::isLocked_() const     { return CONF && CONF->GetBool(LOCK_STATE, true); }
-bool Device::isDoorOpen_() const   { return Sw && Sw->isDoorOpen(); }
+bool Device::isDoorOpen_() const   { return hasReed_ && Sw && Sw->isDoorOpen(); }
 bool Device::isMotorMoving_() const{ return motorDriver && motorDriver->isMovingOrSettling(MOTOR_SETTLE_MS); }
 
 void Device::printMACIfUserButton_() const {

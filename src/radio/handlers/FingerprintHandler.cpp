@@ -13,7 +13,27 @@ static constexpr uint8_t FP_ADOPT_SENSOR  = 0x08;
 static constexpr uint8_t FP_RELEASE       = 0x09;
 
 void FingerprintHandler::onMessage(const transport::TransportMessage& msg) {
-  if (!fp_ || !fp_->isSensorPresent()) {
+  if (!fp_) {
+    sendStatus_(msg, transport::StatusCode::UNSUPPORTED);
+    return;
+  }
+
+  if (!fp_->isSupported()) {
+    sendStatus_(msg, transport::StatusCode::UNSUPPORTED);
+    return;
+  }
+
+  if (!fp_->isEnabled()) {
+    if (msg.header.opCode == FP_VERIFY_OFF) {
+      fp_->stopVerifyMode();
+      sendStatus_(msg, transport::StatusCode::OK);
+      return;
+    }
+    sendStatus_(msg, transport::StatusCode::DENIED);
+    return;
+  }
+
+  if (!fp_->isSensorPresent()) {
     sendReasonEvent_(1); // no sensor
     return;
   }

@@ -102,6 +102,8 @@ Fingerprint::Fingerprint(MotorDriver* motor,
   resumeVerifyAfterEnroll_(false),
   tamperDetected_(false),
   sensorPresent_(false),
+  enabled_(true),
+  supported_(true),
   lastTamperReportMs_(0)
 {
     mtx_ = xSemaphoreCreateRecursiveMutex();
@@ -117,6 +119,10 @@ Fingerprint::Fingerprint(MotorDriver* motor,
 // We ONLY start background verify if the sensor is present AND trusted.
 void Fingerprint::begin() {
     DBG_PRINTLN("[FP] begin()");
+    if (!supported_) {
+        DBG_PRINTLN("[FP] begin skipped (unsupported)");
+        return;
+    }
     bool ok = initSensor_(false);
     DBG_PRINTF("[FP] begin: sensor_ok=%d present=%d tamper=%d\n",
                ok ? 1 : 0,
@@ -135,6 +141,52 @@ void Fingerprint::attachEspNow(EspNowManager* now) {
     Now = now;
     unlock_();
     DBG_PRINTLN("[FP] attachEspNow");
+}
+
+void Fingerprint::setEnabled(bool enabled) {
+    if (enabled_ == enabled) {
+        return;
+    }
+    enabled_ = enabled;
+    if (!enabled_) {
+        DBG_PRINTLN("[FP] disabled");
+        stopAllFpTasks_();
+        return;
+    }
+    DBG_PRINTLN("[FP] enabled");
+    if (!supported_) {
+        return;
+    }
+    if (!finger || !sensorPresent_ || tamperDetected_) {
+        bool ok = initSensor_(false);
+        if (!ok) {
+            return;
+        }
+    }
+    startVerifyMode();
+}
+
+void Fingerprint::setSupported(bool supported) {
+    if (supported_ == supported) {
+        return;
+    }
+    supported_ = supported;
+    if (!supported_) {
+        DBG_PRINTLN("[FP] support disabled");
+        stopAllFpTasks_();
+        return;
+    }
+    DBG_PRINTLN("[FP] support enabled");
+    if (!enabled_) {
+        return;
+    }
+    if (!finger || !sensorPresent_ || tamperDetected_) {
+        bool ok = initSensor_(false);
+        if (!ok) {
+            return;
+        }
+    }
+    startVerifyMode();
 }
 
 void Fingerprint::sendFpEvent_(uint8_t op, const std::vector<uint8_t>& payload) {
@@ -669,6 +721,12 @@ void Fingerprint::FingerMonitorTask(void* parameter) {
 transport::StatusCode Fingerprint::requestEnrollment(uint16_t slotId) {
     lock_();
 
+    if (!isEnabled()) {
+        DBG_PRINTLN("[FP] enroll denied (disabled)");
+        unlock_();
+        return transport::StatusCode::DENIED;
+    }
+
     if (!finger || !sensorPresent_) {
         DBG_PRINTLN("[FP] enroll denied (no sensor)");
         sendFpStatusEvent_(0x0B, transport::StatusCode::DENIED, {1}); // no sensor
@@ -1052,7 +1110,7 @@ void Fingerprint::resetEnrollmentState() {
 }
 
 transport::StatusCode Fingerprint::deleteFingerprint(uint16_t id) {
-    if (!finger) {
+    if (!isEnabled() || !finger) {
         return transport::StatusCode::DENIED;
     }
 
@@ -1069,7 +1127,7 @@ transport::StatusCode Fingerprint::deleteFingerprint() {
 }
 
 transport::StatusCode Fingerprint::deleteAllFingerprints() {
-    if (!finger) {
+    if (!isEnabled() || !finger) {
         return transport::StatusCode::DENIED;
     }
 
@@ -1082,7 +1140,7 @@ transport::StatusCode Fingerprint::deleteAllFingerprints() {
 }
 
 bool Fingerprint::getDbInfo(uint16_t& count, uint16_t& cap) {
-    if (!finger) return false;
+    if (!isEnabled() || !finger) return false;
 
     lock_();
     finger->getTemplateCount();
@@ -1093,7 +1151,7 @@ bool Fingerprint::getDbInfo(uint16_t& count, uint16_t& cap) {
 }
 
 int16_t Fingerprint::findNextFreeID() {
-    if (!finger) {
+    if (!isEnabled() || !finger) {
         return -1;
     }
 
