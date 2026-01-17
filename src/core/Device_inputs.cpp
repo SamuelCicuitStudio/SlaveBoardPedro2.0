@@ -137,7 +137,7 @@ void Device::handleStateTransitions_(bool configured, bool armed,
 
   // Lock state changed -> start DISARMED post-unlock flow if applicable
   if (locked != prevLocked) {
-    if (configured && !locked && !armed) {
+    if (!isAlarmRole_ && configured && !locked && !armed) {
       awaitingDoorCycle_ = true;
       unlockEventMs_     = ms_();
       DBG_PRINTLN("[Flow] Master unlock (DISARMED) -> awaiting door open/close edges");
@@ -162,13 +162,13 @@ void Device::handleStateTransitions_(bool configured, bool armed,
 
       if (doorOpen) {
         // Extra signal in the DISARMED post-unlock flow
-        if (awaitingDoorCycle_ && !armed && !locked) {
+        if (!isAlarmRole_ && awaitingDoorCycle_ && !armed && !locked) {
           sendAck_(EVT_UNL_OPN, true);
           DBG_PRINTLN("[Flow] UNOPN sent (after master unlock, disarmed)");
         }
       } else {
         // Complete the DISARMED post-unlock flow
-        if (awaitingDoorCycle_ && !armed) {
+        if (!isAlarmRole_ && awaitingDoorCycle_ && !armed) {
           sendAck_(EVT_UNL_CLS, true);
           awaitingDoorCycle_ = false;
           DBG_PRINTLN("[Flow] UNCLS sent (cycle complete)");

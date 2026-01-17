@@ -39,6 +39,9 @@ void EspNowManager::heartbeatTick_() {
 }
 
 uint8_t EspNowManager::getCapBits_() {
+  if (IS_SLAVE_ALARM) {
+    return 0x06; // Alarm role: shock + reed only
+  }
   if (!capBitsShadowValid_) {
     uint8_t bits = 0;
     if (CONF) {
@@ -111,11 +114,16 @@ void EspNowManager::sendState(const char* reason) {
   payload.motion = motionEnabled ? 1 : 0;
   payload.role = IS_SLAVE_ALARM ? 1 : 0;
 
-  const bool lock = CONF ? CONF->GetBool(LOCK_STATE, true) : true;
-  const bool hasReed = CONF ? CONF->GetBool(HAS_REED_SWITCH_KEY, HAS_REED_SWITCH_DEFAULT) : false;
+  const bool lock = IS_SLAVE_ALARM ? false
+                                   : (CONF ? CONF->GetBool(LOCK_STATE, true) : true);
+  const bool hasReed = IS_SLAVE_ALARM ? true
+                                      : (CONF ? CONF->GetBool(HAS_REED_SWITCH_KEY,
+                                                              HAS_REED_SWITCH_DEFAULT)
+                                              : false);
   const bool door = hasReed && sw ? sw->isDoorOpen() : false;
   const bool motorMoving =
-      motor && (motor->getLockTaskHandle() != nullptr || motor->getUnlockTaskHandle() != nullptr);
+      (!IS_SLAVE_ALARM && motor &&
+       (motor->getLockTaskHandle() != nullptr || motor->getUnlockTaskHandle() != nullptr));
 
   payload.lock = lock ? 1 : 0;
   payload.door = door ? 1 : 0;

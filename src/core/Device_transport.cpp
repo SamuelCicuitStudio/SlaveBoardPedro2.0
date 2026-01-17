@@ -49,7 +49,7 @@ std::vector<uint8_t> Device::buildStatePayload_() const {
   pl.reserve(17);
   const bool armed     = isArmed_();
   const bool motion    = isMotionEnabled_();
-  const bool locked    = isLocked_();
+  const bool locked    = isAlarmRole_ ? false : isLocked_();
   const bool doorOpen  = isDoorOpen_();
   const bool breach    = (Now ? Now->breach : false);
   const bool motorMove = isMotorMoving_();

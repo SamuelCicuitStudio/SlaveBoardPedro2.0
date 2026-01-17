@@ -1,4 +1,5 @@
 #include <ShockHandler.hpp>
+#include <Config.hpp>
 #include <ConfigNvs.hpp>
 #include <ShockSensor.hpp>
 #include <Transport.hpp>
@@ -17,8 +18,10 @@ void ShockHandler::onMessage(const transport::TransportMessage& msg) {
   auto applyCfg = [this]() -> bool {
     if (!sensor_) return true;
     const bool hasShock =
-        nvs_ ? nvs_->GetBool(HAS_SHOCK_SENSOR_KEY, HAS_SHOCK_SENSOR_DEFAULT)
-             : HAS_SHOCK_SENSOR_DEFAULT;
+        IS_SLAVE_ALARM ? true
+                       : (nvs_ ? nvs_->GetBool(HAS_SHOCK_SENSOR_KEY,
+                                               HAS_SHOCK_SENSOR_DEFAULT)
+                               : HAS_SHOCK_SENSOR_DEFAULT);
     if (!hasShock) {
       sensor_->disable();
       return true;

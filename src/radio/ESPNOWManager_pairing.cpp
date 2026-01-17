@@ -293,10 +293,14 @@ void EspNowManager::finalizePairInit_() {
 
   storeMacAddress(pendingPairInitMac_);
   CONF->PutInt(MASTER_CHANNEL_KEY, pendingPairInitChannel_);
-  CONF->PutBool(HAS_OPEN_SWITCH_KEY,  (pendingPairInitCaps_ & 0x01) != 0);
-  CONF->PutBool(HAS_SHOCK_SENSOR_KEY, (pendingPairInitCaps_ & 0x02) != 0);
-  CONF->PutBool(HAS_REED_SWITCH_KEY,  (pendingPairInitCaps_ & 0x04) != 0);
-  CONF->PutBool(HAS_FINGERPRINT_KEY,  (pendingPairInitCaps_ & 0x08) != 0);
+  uint8_t caps = pendingPairInitCaps_;
+  if (IS_SLAVE_ALARM) {
+    caps = 0x06; // Alarm role: shock + reed only
+  }
+  CONF->PutBool(HAS_OPEN_SWITCH_KEY,  (caps & 0x01) != 0);
+  CONF->PutBool(HAS_SHOCK_SENSOR_KEY, (caps & 0x02) != 0);
+  CONF->PutBool(HAS_REED_SWITCH_KEY,  (caps & 0x04) != 0);
+  CONF->PutBool(HAS_FINGERPRINT_KEY,  (caps & 0x08) != 0);
   const int shockTypeValue =
       pendingPairInitShockExternal_ ? SHOCK_SENSOR_TYPE_EXTERNAL : SHOCK_SENSOR_TYPE_INTERNAL;
   CONF->PutInt(SHOCK_SENSOR_TYPE_KEY, shockTypeValue);
@@ -304,7 +308,7 @@ void EspNowManager::finalizePairInit_() {
   CONF->PutBool(ARMED_STATE, false);
   CONF->PutBool(MOTION_TRIG_ALARM, false);
   CONF->PutString(MASTER_LMK_KEY, String(lmkHex));
-  setCapBitsShadow_(pendingPairInitCaps_);
+  setCapBitsShadow_(caps);
 
   DBG_PRINTLN("[ESPNOW][pair] Step 4: remove temporary unencrypted peer");
   (void)unregisterPeer(pendingPairInitMac_);

@@ -127,14 +127,18 @@ void SleepTimer::goToSleep() {
         (CONF && CONF->GetBool(DEVICE_CONFIGURED, false));
 
     const bool hasReed =
-        (CONF && CONF->GetBool(HAS_REED_SWITCH_KEY, HAS_REED_SWITCH_DEFAULT));
+        IS_SLAVE_ALARM ? true
+                       : (CONF && CONF->GetBool(HAS_REED_SWITCH_KEY,
+                                                HAS_REED_SWITCH_DEFAULT));
 
     const bool hasOpenBtn =
         (!IS_SLAVE_ALARM &&
          CONF && CONF->GetBool(HAS_OPEN_SWITCH_KEY, HAS_OPEN_SWITCH_DEFAULT));
 
     const bool hasShock =
-        (CONF && CONF->GetBool(HAS_SHOCK_SENSOR_KEY, HAS_SHOCK_SENSOR_DEFAULT));
+        IS_SLAVE_ALARM ? true
+                       : (CONF && CONF->GetBool(HAS_SHOCK_SENSOR_KEY,
+                                                HAS_SHOCK_SENSOR_DEFAULT));
 
     // If reed exists and door is OPEN → don't sleep; reset timer
     if (hasReed) {

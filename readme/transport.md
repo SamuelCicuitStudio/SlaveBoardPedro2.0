@@ -70,6 +70,9 @@ Device state struct (little endian bytes):
 
 Capability bits: bit0=OpenSwitch, bit1=Shock, bit2=Reed, bit3=Fingerprint.
 
+Notes:
+- Alarm role always reports `locked=0` (lock state is ignored) and forces capability bits to `0x06` (shock+reed).
+
 ### Module 0x02 Motor (lock boards)
 - 0x01 Lock (Req/Cmd). Resp: status.
 - 0x02 Unlock (Req/Cmd). Resp: status.

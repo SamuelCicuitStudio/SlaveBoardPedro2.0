@@ -9,7 +9,7 @@ This document teaches an LLM how to **reason about and describe** the device's r
 - **Breach (paired, Good battery)**: Lock role -> `ARMED_STATE=true` + `LOCK_STATE=true` + door open; Alarm role -> `ARMED_STATE=true` + door open (lock state ignored).
 - **Open button while armed**: the press is still reported to the master, but the slave never unlocks locally.
 - **Disarm vs clear**: `CMD_DISARM_SYSTEM` prevents new alarm escalation; an active alarm/breach is cleared only by `CMD_CLEAR_ALARM`.
-- **Breach persistence**: breach state is latched in NVS and survives reboot until the master clears it.
+- **Breach persistence**: breach state is latched in NVS and survives reboot until the master clears it. The `AlarmRequest` event is sent only when breach is first detected; after reboot the breach flag remains set and is reported in state responses until cleared.
 - **Driver near/far**: the master uses `CMD_DISABLE_MOTION` (driver near) and `CMD_ENABLE_MOTION` (driver far); driver near must not be treated as a full disarm.
 - **Config Mode / Test Mode**: security off (no breach or `AlarmRequest`), but diagnostic events still flow; fingerprint verify remains active (match/fail streamed).
 - **Fingerprint enrollment**: stage-by-stage feedback and waits for the user (place -> lift -> place again); verify and enroll must not overlap.
@@ -29,7 +29,7 @@ This document teaches an LLM how to **reason about and describe** the device's r
 - **Config Mode / Test Mode**: special, **paired-only**, RAM-latched until reboot (entered via `CMD_ENTER_TEST_MODE`, acknowledged by `ACK_TEST_MODE`).
 - **Battery band**: `Good`, `Low`, `Critical`.
 - **Capabilities (Lock role only, per HAS\_\* flags)**: motor, open button, fingerprint, reed switch, shock sensor.
-  **Alarm role** always has: reed + shock **only** (motor/open/fingerprint disabled). Alarm role ignores `HAS_OPEN_SWITCH_KEY` and never arms the open switch input or wake source.
+  **Alarm role** always has: reed + shock **only** (motor/open/fingerprint disabled). Alarm role ignores `HAS_OPEN_SWITCH_KEY` and never arms the open switch input or wake source. Caps are forced to **reed+shock** even if PairInit/CapsSet/NvsWrite attempts to change them.
 
 ### Absolute precedence (apply from top to bottom; higher rules override lower)
 
@@ -218,8 +218,8 @@ as **Good**, so breach/AlarmRequest can still fire.
   - **Disarmed** (motion enabled) or **Config Mode** (always): emit **Shock Trigger only** (no `AlarmRequest`).
 
 - **StateReport**: include at minimum
-  `role`, `armed`, `door`, `breach`, `batt_level`, `power_band`, `configMode`, `shock_enabled`
-  (and `locked` when in Lock role).
+  `role`, `armed`, `door`, `breach`, `batt_level`, `power_band`, `configMode`, `shock_enabled`.
+  `locked` is meaningful only in Lock role; Alarm role reports `locked=0`.
 - **Power overlays** (Low/Critical):
   `AlarmOnlyMode`/`LockCanceled` (Lock role only), `CriticalPower`, and `Power LowBatt/CriticalBatt` as applicable.
 
@@ -238,7 +238,7 @@ as **Good**, so breach/AlarmRequest can still fire.
 - **Breach (Armed)**: when **Paired** and the **confirmed** band is **Good**, door open while Armed -> `AlarmRequest(reason=breach)`; `breach` stays set until `CMD_CLEAR_ALARM` (lock state ignored).
 - **Operational note**: the master must disarm before opening; opening while Armed always triggers breach.
 - **Motor/open/fingerprint**: commands return **UNSUPPORTED**; no related events are generated.
-- The `locked` field is the persisted expectation (`LOCK_STATE`); it does **not** gate breach in Alarm role.
+- **StateReport**: `locked` is always **0** (lock state is ignored in Alarm role).
 
 ---
 
@@ -538,7 +538,7 @@ These are here to make firmware changes straightforward and unambiguous.
   motion trigger enable/disable (`CMD_ENABLE_MOTION` / `CMD_DISABLE_MOTION`).
 - **Motion enabled**: NVS key `MOTION_TRIG_ALARM` toggled by
   `CMD_ENABLE_MOTION` / `CMD_DISABLE_MOTION`. It gates all shock-trigger events.
-- **Locked state**: NVS key `LOCK_STATE` read via `Device::isLocked_()`. It gates breach only in **Lock role**; Alarm role ignores lock state for breach.
+- **Locked state**: NVS key `LOCK_STATE` read via `Device::isLocked_()`. It gates breach only in **Lock role**; Alarm role ignores lock state for breach and reports `locked=0` in state payloads.
 - **Breach state**: NVS key `BREACH_STATE` stores the latched breach flag and is loaded on boot; it is cleared only by `CMD_CLEAR_ALARM`.
 - **Config Mode**: `EspNowManager::configMode_` toggled by `EspNowManager::setConfigMode()`, mirrored into `Device::configModeActive_` by `Device::updateConfigMode_()`. All security paths must use `configModeActive_` to gate behavior.
 - **Door open/closed**: `SwitchManager::isDoorOpen()` (backed by a fast IRQ on `REED_SWITCH_PIN` plus polling) read via `Device::isDoorOpen_()`. When `hasReed_==false`, the effective door is treated as **always closed** for breach/shock logic.

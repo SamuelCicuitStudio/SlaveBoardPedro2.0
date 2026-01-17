@@ -23,6 +23,26 @@ void Device::refreshCapabilities_() {
     hasFingerprint_   = false;
     hasShock_         = true;
     hasReed_          = true;
+    bool capsDirty = false;
+    if (CONF->GetBool(HAS_OPEN_SWITCH_KEY, HAS_OPEN_SWITCH_DEFAULT) != false) {
+      CONF->PutBool(HAS_OPEN_SWITCH_KEY, false);
+      capsDirty = true;
+    }
+    if (CONF->GetBool(HAS_FINGERPRINT_KEY, HAS_FINGERPRINT_DEFAULT) != false) {
+      CONF->PutBool(HAS_FINGERPRINT_KEY, false);
+      capsDirty = true;
+    }
+    if (CONF->GetBool(HAS_SHOCK_SENSOR_KEY, HAS_SHOCK_SENSOR_DEFAULT) != true) {
+      CONF->PutBool(HAS_SHOCK_SENSOR_KEY, true);
+      capsDirty = true;
+    }
+    if (CONF->GetBool(HAS_REED_SWITCH_KEY, HAS_REED_SWITCH_DEFAULT) != true) {
+      CONF->PutBool(HAS_REED_SWITCH_KEY, true);
+      capsDirty = true;
+    }
+    if (capsDirty) {
+      DBG_PRINTLN("[Device] Alarm role: forced caps to reed+shock");
+    }
   }
 
   updateShockSensor_();

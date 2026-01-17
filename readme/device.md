@@ -14,7 +14,7 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 ## Roles and capability gating
 
 - Lock role (`IS_SLAVE_ALARM=false`): HAS_* gates decide open button, shock, reed, fingerprint. Motor and FP are constructed only if present.
-- Alarm role (`IS_SLAVE_ALARM=true`): motor/open/fingerprint are hard-disabled; shock and reed are forced enabled. Motor/FP objects are not constructed, motor commands are stubbed (UNSUPPORTED), and motor-style events are suppressed. Open switch input and wake are disabled (ignores `HAS_OPEN_SWITCH_KEY`).
+- Alarm role (`IS_SLAVE_ALARM=true`): motor/open/fingerprint are hard-disabled; shock and reed are forced enabled. Motor/FP objects are not constructed, motor commands are stubbed (UNSUPPORTED), and motor-style events are suppressed. Open switch input and wake are disabled (ignores `HAS_OPEN_SWITCH_KEY`). Capability bits are forced to shock+reed even if PairInit/CapsSet/NvsWrite tries to change them.
 
 ## Pairing and transport
 
@@ -41,7 +41,7 @@ This summarizes how the slave implements lock vs. alarm roles, transport/ESP-NOW
 
 ## Event/reporting
 
-- Door/Reed (hasReed_): DoorEdge + StateReport on edges. In lock role, the slave emits transport `MotorDone` (Motor op=0x05) when the motor finishes; the ESP-NOW bridge also maps motor completion to CommandAPI `ACK_LOCKED`/`ACK_UNLOCKED` for master compatibility.
+- Door/Reed (hasReed_): DoorEdge + StateReport on edges. In lock role, the slave emits transport `MotorDone` (Motor op=0x05) when the motor finishes; the ESP-NOW bridge also maps motor completion to CommandAPI `ACK_LOCKED`/`ACK_UNLOCKED` for master compatibility. Alarm role reports `locked=0` in state payloads (lock state ignored).
 - Shock (hasShock_, motion enabled; Config Mode always reports): Shock Trigger; AlarmRequest(reason=shock) only when armed.
 - Breach (paired, armed): Lock role uses `LOCK_STATE=true` + door open; Alarm role uses door open while armed. Emits AlarmRequest(reason=breach) + Breach set; cleared only by `CMD_CLEAR_ALARM`.
 - DriverFar: lock role only, paired+armed+doorOpen+!locked, rate-limited.

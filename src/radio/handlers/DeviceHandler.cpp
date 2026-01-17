@@ -68,10 +68,10 @@ void DeviceHandler::handleStateQuery_(const transport::TransportMessage& msg) {
   pl.reserve(17);
   const bool armed     = dev_->isArmed_();
   const bool motion    = dev_->isMotionEnabled_();
-  const bool locked    = dev_->isLocked_();
+  const bool locked    = dev_->isAlarmRole_ ? false : dev_->isLocked_();
   const bool doorOpen  = dev_->isDoorOpen_();
   const bool breach    = (dev_->Now ? dev_->Now->breach : false);
-  const bool motorMove = dev_->isMotorMoving_();
+  const bool motorMove = dev_->isAlarmRole_ ? false : dev_->isMotorMoving_();
   const uint8_t batt   = dev_->PowerMgr ? (uint8_t)dev_->PowerMgr->getBatteryPercentage() : 0;
   const uint8_t pmode  = dev_->PowerMgr ? (uint8_t)dev_->PowerMgr->getPowerMode() : 0;
   const uint8_t band   = dev_->effectiveBand_;
@@ -229,6 +229,16 @@ void DeviceHandler::handleNvsWrite_(const transport::TransportMessage& msg) {
   }
   uint8_t keyId = msg.payload[0];
   bool val = msg.payload[1] != 0;
+  if (dev_ && dev_->isAlarmRole_ && keyId >= 3 && keyId <= 6) {
+    // Alarm role forces reed+shock only; ignore attempts to toggle caps.
+    CONF->PutBool(HAS_OPEN_SWITCH_KEY,  false);
+    CONF->PutBool(HAS_SHOCK_SENSOR_KEY, true);
+    CONF->PutBool(HAS_REED_SWITCH_KEY,  true);
+    CONF->PutBool(HAS_FINGERPRINT_KEY,  false);
+    dev_->refreshCapabilities_();
+    sendStatusOnly_(msg, transport::StatusCode::OK);
+    return;
+  }
   bool capChanged = false;
   switch (keyId) {
     case 1: CONF->PutBool(ARMED_STATE, val); break;
