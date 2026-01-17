@@ -277,14 +277,14 @@ as **Good**, so breach/AlarmRequest can still fire.
 
 | Role  | Paired | Config Mode | Battery      | Motor                         | Shock Reports                                   | Breach                             | Transport                     |
 | ----- | ------ | ----------- | ------------ | ----------------------------- | ----------------------------------------------- | ---------------------------------- | ----------------------------- |
-| Lock  | No     | N/A         | Good         | **Allowed via button**        | Local only                                      | **Not evaluated**                  | **Pairing only**              |
-| Lock  | No     | N/A         | Low          | **Disabled**                  | Local only                                      | **Not evaluated**                  | **Pairing only**              |
-| Lock  | No     | N/A         | Critical     | **Disabled**                  | Local only                                      | **Not evaluated**                  | **Pairing only**              |
+| Lock  | No     | N/A         | Good         | **Allowed via button** (wake armed) | Local only                                 | **Not evaluated**                  | **Pairing only**              |
+| Lock  | No     | N/A         | Low          | **Disabled** (wake armed)          | Local only                                 | **Not evaluated**                  | **Pairing only**              |
+| Lock  | No     | N/A         | Critical     | **Disabled** (wake armed)          | Local only                                 | **Not evaluated**                  | **Pairing only**              |
 | Lock  | Yes    | No          | Good         | Allowed by commands           | Armed: Shock+AlarmRequest; Disarmed: Shock-only | **Armed & locked & door open**     | **Yes**                       |
 | Lock  | Yes    | **Yes**     | Good         | Allowed by commands           | **Shock-only** (diagnostic)                     | **Suppressed (Config Mode)**       | **Yes**                       |
 | Lock  | Yes    | Any         | **Low**      | Master-gated (no local block) | Reported; **no AlarmRequest**                   | **Suppressed (existing persists)** | **Yes**, then sleep           |
 | Lock  | Yes    | Any         | **Critical** | Master-gated (no local block) | Reported; **no AlarmRequest**                   | **Suppressed (existing persists)** | **Yes**, then immediate sleep |
-| Alarm | No     | N/A         | Any          | N/A                           | Local only                                      | **Not evaluated**                  | **Pairing only**              |
+| Alarm | No     | N/A         | Any          | N/A                           | Local only (shock wake armed)                  | **Not evaluated**                  | **Pairing only**              |
 | Alarm | Yes    | No          | Good         | N/A                           | Armed: Shock+AlarmRequest; Disarmed: Shock-only | **Armed & door open**              | **Yes**                       |
 | Alarm | Yes    | **Yes**     | Good         | N/A                           | **Shock-only** (diagnostic)                     | **Suppressed (Config Mode)**       | **Yes**                       |
 | Alarm | Yes    | Any         | **Low**      | N/A                           | Reported; **no AlarmRequest**                   | **Suppressed (existing persists)** | **Yes**, then sleep           |

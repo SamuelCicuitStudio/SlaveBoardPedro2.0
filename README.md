@@ -43,6 +43,7 @@ Note: On the Alarm variant, motor/open/fingerprint capabilities are ignored even
   - External shock pin **wakes** the device (always armed for wake).
   - Reed/shock activity is local only; no breach is reported while unpaired.
 - **Sleep**: normal battery policy applies; Low/Critical disables local motor and may force sleep after grace.
+ - **Quick wake tip**: unpaired Lock can be woken by the open button; unpaired Alarm can be woken by the motion/shock sensor.
 
 ### Paired (normal mode)
 
