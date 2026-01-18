@@ -25,7 +25,7 @@
 // initManagers_()
 // =========================
 void Device::initManagers_() {
-  WiFi.mode(WIFI_AP_STA);
+  WiFi.mode(WIFI_STA);
    delay(1000);
   // Time / RTC
   struct tm timeInfo{};

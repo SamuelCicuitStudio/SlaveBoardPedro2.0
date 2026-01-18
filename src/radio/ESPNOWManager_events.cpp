@@ -1,5 +1,7 @@
 #include <ESPNOWManager.hpp>
 #include <CommandAPI.hpp>
+#include <ConfigNvs.hpp>
+#include <NVSManager.hpp>
 #include <Transport.hpp>
 #include <Utils.hpp>
 
@@ -165,6 +167,10 @@ bool EspNowManager::handleTransportTx(const transport::TransportMessage& msg) {
   // ---------- Shock module ----------
   if (mod == static_cast<uint8_t>(transport::Module::Shock)) {
     if (op == 0x03) {
+      const bool motionEnabled = (CONF && CONF->GetBool(MOTION_TRIG_ALARM, false));
+      DBG_PRINT("[ESPNOW][TX] shock sensor triggered (motion ");
+      DBG_PRINT(motionEnabled ? "enabled" : "disabled");
+      DBG_PRINTLN(")");
       sendRespNoPayload(EVT_MTRTTRG, false);
       return true;
     }

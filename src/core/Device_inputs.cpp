@@ -35,20 +35,45 @@ void Device::pollInputsAndEdges_(bool securityEnabled) {
   // - Paired: always emit Shock Trigger; AlarmRequest(reason=shock) only when
   //           "effective armed" is true (armed==true here).
   const bool motionEnabled = isMotionEnabled_();
-  if (hasShock_ && shockSensor && motionEnabled && !motorMoving && shockSensor->isTriggered()) {
-    if (!configured) {
-      DBG_PRINTLN("[Device] Shock/motion detected (UNPAIRED bench mode)");
-      if (RGB) RGB->postOverlay(OverlayEvent::SHOCK_DETECTED);
-      if (sleepTimer) sleepTimer->reset();
-    } else {
-      if (RGB) RGB->postOverlay(OverlayEvent::SHOCK_DETECTED);
-      sendTransportEvent_(transport::Module::Shock, /*op*/0x03, {uint8_t(transport::StatusCode::OK)});
-      if (armed && batteryOk) {
-        // Only when effectively armed (Config Mode forces armed=false).
-        sendTransportEvent_(transport::Module::Device, /*op*/0x0F, {1}); // AlarmRequest reason=shock
+  // Debug: log shock pin activity even if capability/motion is disabled.
+  {
+    static bool shockPrevActive = false;
+    static uint32_t lastShockLogMs = 0;
+    const bool shockActive = (digitalRead(SHOCK_SENSOR1_PIN) == LOW);
+    if (shockActive && !shockPrevActive) {
+      const uint32_t nowMs = ms_();
+      if ((nowMs - lastShockLogMs) >= 200U) {
+        DBG_PRINTLN("[Device] Shock pin active (debug)");
+        lastShockLogMs = nowMs;
       }
-      if (sleepTimer) sleepTimer->reset();
-      DBG_PRINTLN("[Device] trigger -> motion alert sent to master");
+    }
+    shockPrevActive = shockActive;
+  }
+  if (hasShock_ && shockSensor && !motorMoving) {
+    const bool shockDetected = shockSensor->isTriggered();
+    if (shockDetected) {
+      if (motionEnabled) {
+        DBG_PRINTLN("[Device] Shock/motion detected");
+      } else {
+        DBG_PRINTLN("[Device] Shock/motion detected (motion disabled)");
+      }
+      if (motionEnabled) {
+        if (!configured) {
+          if (RGB) RGB->postOverlay(OverlayEvent::SHOCK_DETECTED);
+          if (sleepTimer) sleepTimer->reset();
+        } else {
+          if (RGB) RGB->postOverlay(OverlayEvent::SHOCK_DETECTED);
+          sendTransportEvent_(transport::Module::Shock, /*op*/0x03,
+                              {uint8_t(transport::StatusCode::OK)});
+          if (armed && batteryOk) {
+            // Only when effectively armed (Config Mode forces armed=false).
+            sendTransportEvent_(transport::Module::Device, /*op*/0x0F,
+                                {1}); // AlarmRequest reason=shock
+          }
+          if (sleepTimer) sleepTimer->reset();
+          DBG_PRINTLN("[Device] trigger -> motion alert sent to master");
+        }
+      }
     }
   }
 

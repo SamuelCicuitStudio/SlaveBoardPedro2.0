@@ -303,12 +303,12 @@ void EspNowManager::ProcessComand(uint16_t opcode, const uint8_t* payload, size_
     return;
   }
   if (opcode == CMD_ENABLE_MOTION) {
-   // DBG_PRINTLN("[ESPNOW][CMD] ENABLE_MOTION -> Shock Enable (op=0x01)");
+    DBG_PRINTLN("[ESPNOW][RX] SHOCK TRIGGER ACTIVATED");
     dispatchTransport(Module::Shock, /*op*/0x01, {}, "MOTION_ENABLE");
     return;
   }
   if (opcode == CMD_DISABLE_MOTION) {
-   // DBG_PRINTLN("[ESPNOW][CMD] DISABLE_MOTION -> Shock Disable (op=0x02)");
+    DBG_PRINTLN("[ESPNOW][RX] SHOCK TRIGGER DEACTIVATED");
     dispatchTransport(Module::Shock, /*op*/0x02, {}, "MOTION_DISABLE");
     return;
   }
